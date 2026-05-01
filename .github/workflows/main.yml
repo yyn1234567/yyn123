@@ -9,21 +9,23 @@ jobs:
   build:
     name: Build Android APK
     container: kivy/buildozer:latest 
-
     runs-on: ubuntu-latest
+    
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
       - name: 构建 Debug APK
         run: |
-          # 开启详细日志
           buildozer -v android debug
         env:
-          # --- 关键修复：绕过 Root 警告 ---
-          # 强制 Buildozer 接受 Root 权限运行，避免交互式提示
-          BUILD_WITH_PYTHON: python
-          # 告诉 Buildozer 我们知道自己在做什么，不要问“Are you sure”
+          # --- 核心修复：强制 Buildozer 以 CI 模式运行 ---
+          # 这会跳过 "Buildozer is running as root!" 的交互式询问
+          BUILDING_IN_CI: 1
+          
+          # 其他辅助环境变量
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
           PYTHONUNBUFFERED: 1
 
       - name: 上传 APK
