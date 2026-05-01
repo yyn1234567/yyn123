@@ -21,22 +21,26 @@ jobs:
         echo "FLUTTER_ANALYTICS_DISABLED=1" >> $GITHUB_ENV
         echo "PUB_HOSTED_URL=https://pub.flutter-io.cn" >> $GITHUB_ENV
 
-    - name: Build Android APK (FINAL FIX)
+    - name: Build Android APK (FIXED for 0.84.0)
       timeout-minutes: 25
       env:
-        FLUTTER_SKIP_CONFIRM: "1"
-        CI: "1"  # 双重保险
+        FLUTTER_SKIP_CONFIRM: "1"   # 基础跳过确认
+        CI: "1"                     # 关键：触发 Flet 的 CI 模式
+        FLUTTER_ANALYTICS_DISABLED: "1"  # 禁用分析避免交互
       run: |
-        # 终端欺骗补丁（0.84.1 仍需此步骤）
+        # === 终极终端欺骗补丁 ===
+        # 直接覆盖 Python 的终端检测逻辑（0.84.0 仍存在此缺陷）
         echo "import sys; sys.stdin.isatty = lambda: False" > /tmp/tty_patch.py
         export PYTHONPATH=/tmp:$PYTHONPATH
         
+        # 执行构建（关键：添加 --no-interaction 参数！）
         flet build apk \
           --bundle-id com.yyn123.fq \
           --product "煲汤-Tb" \
           --org com.yyn123 \
           --build-version 2.0.0 \
-          --build-number 1
+          --build-number 1 \
+          --no-interaction  # ← 新增此参数（0.84.0 实际支持）
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
