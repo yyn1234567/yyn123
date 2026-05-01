@@ -14,27 +14,30 @@ jobs:
         python-version: '3.11'
 
     - name: Install Flet (v0.84.0)
-      run: pip install flet==0.84.0  # 确认使用可用版本
+      run: pip install flet==0.84.0
 
-    - name: Build Android APK (WORKING FIX)
+    - name: Build Android APK (WORKING)
       timeout-minutes: 25
       env:
         FLUTTER_SKIP_CONFIRM: "1"
-        CI: "1"  # 触发 CI 模式
-        FLUTTER_ANALYTICS_DISABLED: "1"  # 额外防护
+        CI: "true"  # 注意：必须是字符串 "true" 而非 "1"
       run: |
-        # 终端欺骗补丁（解决 0.84.0 核心缺陷）
-        echo "import sys; sys.stdin.isatty = lambda: False" > /tmp/tty_patch.py
-        export PYTHONPATH=/tmp:$PYTHONPATH
+        # 创建终端欺骗补丁
+        echo "import sys; sys.stdin.isatty = lambda: False" > $HOME/tty_patch.py
+        export PYTHONSTARTUP=$HOME/tty_patch.py
         
-        # 关键：添加 --no-interaction 参数
-        flet build apk \
+        # 验证补丁生效（必须输出 False！）
+        echo "=== VERIFYING TERMINAL FIX ==="
+        python -c "import sys; print('isatty:', sys.stdin.isatty())"
+        # 期望输出: isatty: False
+        
+        # 关键：用 yes 自动确认安装
+        yes | flet build apk \
           --bundle-id com.yyn123.fq \
           --product "煲汤-Tb" \
           --org com.yyn123 \
           --build-version 2.0.0 \
-          --build-number 1 \
-          --no-interaction  # ← 必须存在！
+          --build-number 1
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
