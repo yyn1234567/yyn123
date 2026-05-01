@@ -3,7 +3,6 @@ name: Build Android APK
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
   build:
@@ -19,8 +18,10 @@ jobs:
     - name: Install Flet
       run: pip install flet==0.84.0
 
-    # ✅ 关键修复：严格遵循3步规则
+    # ✅ 关键修复：添加环境变量跳过确认
     - name: Build Android APK
+      env:
+        FLUTTER_SKIP_CONFIRM: 1  # 必须！
       run: >
         flet build apk
         --bundle-id com.yyn123.fq
@@ -29,5 +30,8 @@ jobs:
         --build-version 2.0.0
         --build-number 1
 
-    - name: Verify APK
-      run: ls -lh build/apk/release/app-release.apk
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: build/apk/release/app-release.apk
