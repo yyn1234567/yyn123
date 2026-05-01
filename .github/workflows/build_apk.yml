@@ -16,6 +16,7 @@ jobs:
         run: |
           docker run --rm \
             -v "${{ github.workspace }}":/app \
+            -e BUILDOZER_ROOT=1 \
             kivy/buildozer \
             /bin/sh -c "cd /app && buildozer android debug"
 
