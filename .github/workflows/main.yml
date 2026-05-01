@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Auto-Confirm Root)
 
 on:
   push:
@@ -15,20 +15,18 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 构建 Debug APK
+      - name: 构建 Debug APK (自动确认Root权限)
         run: |
-          buildozer -v android debug
+          # 关键修复：用 echo 'y' 自动跳过 "Are you sure [y/n]?" 提示
+          echo 'y' | buildozer -v android debug
         env:
-          # --- 核心修复：强制 Buildozer 以 CI 模式运行 ---
-          # 这会跳过 "Buildozer is running as root!" 的交互式询问
-          BUILDING_IN_CI: 1
-          
-          # 其他辅助环境变量
+          # 必须设置：防止编码错误
           LC_ALL: C.UTF-8
           LANG: C.UTF-8
+          # 强制Python实时输出日志（便于排查后续错误）
           PYTHONUNBUFFERED: 1
 
-      - name: 上传 APK
+      - name: 上传APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
