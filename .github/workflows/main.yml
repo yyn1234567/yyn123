@@ -15,17 +15,24 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 自动接受 Android SDK 许可协议
+      - name: 预接受 Android SDK 许可协议 (关键修复)
         run: |
-          # 关键步骤：自动确认所有 SDK 许可
-          yes | sdkmanager --licenses
-          # 额外验证：确保 Build-Tools 37 可安装
-          sdkmanager "build-tools;37.0.0"
+          # 创建 Buildozer 实际使用的许可协议目录
+          mkdir -p $HOME/.android/licenses
+          
+          # 写入官方许可协议哈希值（Build-Tools 37 必需）
+          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $HOME/.android/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/licenses/android-sdk-license
+          
+          # 验证许可协议已创建
+          cat $HOME/.android/licenses/android-sdk-license
 
       - name: 构建 Debug APK
         run: |
-          echo 'y' | buildozer -v android debug
+          buildozer -v android debug
         env:
+          # 同时解决两个问题：
+          BUILDING_IN_CI: 1       # 跳过 Root 权限警告
           LC_ALL: C.UTF-8
           LANG: C.UTF-8
           PYTHONUNBUFFERED: 1
