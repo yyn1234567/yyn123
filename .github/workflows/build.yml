@@ -10,38 +10,106 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Cache Python packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Android/Sdk
+            ~/.buildozer
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('buildozer.spec') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git ffmpeg libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev zlib1g-dev imagemagick
-          pip install --upgrade pip
-          pip install buildozer
-          pip install cython
-          pip install numpy
+          sudo apt-get install -y build-essential git ffmpeg libsdl2-dev libsdl2-image-dev \
+            libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev \
+            libavformat-dev libavcodec-dev zlib1g-dev imagemagick
+          sudo apt-get install -y openjdk-11-jdk autoconf libtool pkg-config \
+            libncurses5-dev libncursesw5-dev libtinfo5 cmake
 
-      - name: Create assets directory
+      - name: Set up Java environment
+        run: |
+          echo "JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> $GITHUB_ENV
+          echo "/usr/lib/jvm/java-11-openjdk-amd64/bin" >> $GITHUB_PATH
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython numpy pillow
+
+      - name: Install Android SDK
+        run: |
+          export ANDROID_HOME=$HOME/Android/Sdk
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_LICENSE=8933bad161af4178b1185d1a37fbf41e" >> $GITHUB_ENV
+          echo "ANDROID_SDK_PREVIEW_LICENSE=84831b9409646a918e30573bab4c9c91346d8abd" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          cd $ANDROID_HOME/cmdline-tools
+          # 使用 2024 年稳定的命令行工具版本（建议定期检查更新）
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          mv cmdline-tools latest
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --update || true
+
+      - name: Install Android SDK components
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-33" \
+            "build-tools;33.0.0" \
+            "ndk;25.1.8937393"
+
+      - name: Configure buildozer
+        run: |
+          if [ -f "buildozer.spec" ]; then
+            # 双引号确保变量展开
+            sed -i "s|^android.sdk_path=.*|android.sdk_path=$ANDROID_HOME|g" buildozer.spec
+            sed -i "s|^android.ndk_path=.*|android.ndk_path=$ANDROID_HOME/ndk/25.1.8937393|g" buildozer.spec
+          fi
+
+      - name: Create assets directory (with fallback icons)
         run: |
           mkdir -p assets
-          # Create simple splash screen and icon placeholders
-          convert -size 512x512 xc:white -fill blue -draw "circle 256,256 256,150" assets/icon.png 2>/dev/null || \
-            wget -O assets/icon.png https://raw.githubusercontent.com/kivy/kivy/master/kivy/tools/logo/kivy-icon-512.png || \
-            echo "Icon placeholder created"
-
-          convert -size 1024x500 xc:white -fill red -pointsize 48 -draw "text 100,250 'Fanqie Downloader'" assets/presplash.png 2>/dev/null || \
-            wget -O assets/presplash.png https://raw.githubusercontent.com/kivy/kivy/master/kivy/tools/logo/presplash.png || \
-            echo "Presplash placeholder created"
+          # 尝试生成图标，失败则从网络获取，最后才用极简占位图
+          if ! convert -size 512x512 xc:white -fill blue -draw "circle 256,256 256,150" assets/icon.png 2>/dev/null; then
+            wget -q -O assets/icon.png https://raw.githubusercontent.com/kivy/kivy/master/kivy/tools/logo/kivy-icon-512.png || \
+            python3 -c "from PIL import Image; Image.new('RGB', (512,512), 'white').save('assets/icon.png')"
+          fi
+          if ! convert -size 1024x500 xc:white -fill red -pointsize 48 -draw "text 100,250 'Fanqie Downloader'" assets/presplash.png 2>/dev/null; then
+            wget -q -O assets/presplash.png https://raw.githubusercontent.com/kivy/kivy/master/kivy/tools/logo/presplash.png || \
+            python3 -c "from PIL import Image; Image.new('RGB', (1024,500), 'white').save('assets/presplash.png')"
+          fi
 
       - name: Build APK
         run: |
           buildozer android debug
-          mv bin/*.apk bin/fanqie_downloader.apk || true
+          # 安全地复制第一个生成的 APK 为固定名称
+          APK_FILE=$(ls bin/*.apk 2>/dev/null | head -1)
+          if [ -n "$APK_FILE" ]; then
+            cp "$APK_FILE" bin/fanqie_downloader.apk
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -51,7 +119,7 @@ jobs:
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           files: bin/*.apk
           draft: false
