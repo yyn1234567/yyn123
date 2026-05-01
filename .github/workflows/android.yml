@@ -13,34 +13,28 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Fixed Flet
-      run: pip install flet==0.84.1  # 关键：使用修复版本
+    - name: Install Flet (v0.84.0)
+      run: pip install flet==0.84.0  # 确认使用可用版本
 
-    - name: Disable Analytics
-      run: |
-        echo "FLUTTER_ANALYTICS_DISABLED=1" >> $GITHUB_ENV
-        echo "PUB_HOSTED_URL=https://pub.flutter-io.cn" >> $GITHUB_ENV
-
-    - name: Build Android APK (FIXED for 0.84.0)
+    - name: Build Android APK (WORKING FIX)
       timeout-minutes: 25
       env:
-        FLUTTER_SKIP_CONFIRM: "1"   # 基础跳过确认
-        CI: "1"                     # 关键：触发 Flet 的 CI 模式
-        FLUTTER_ANALYTICS_DISABLED: "1"  # 禁用分析避免交互
+        FLUTTER_SKIP_CONFIRM: "1"
+        CI: "1"  # 触发 CI 模式
+        FLUTTER_ANALYTICS_DISABLED: "1"  # 额外防护
       run: |
-        # === 终极终端欺骗补丁 ===
-        # 直接覆盖 Python 的终端检测逻辑（0.84.0 仍存在此缺陷）
+        # 终端欺骗补丁（解决 0.84.0 核心缺陷）
         echo "import sys; sys.stdin.isatty = lambda: False" > /tmp/tty_patch.py
         export PYTHONPATH=/tmp:$PYTHONPATH
         
-        # 执行构建（关键：添加 --no-interaction 参数！）
+        # 关键：添加 --no-interaction 参数
         flet build apk \
           --bundle-id com.yyn123.fq \
           --product "煲汤-Tb" \
           --org com.yyn123 \
           --build-version 2.0.0 \
           --build-number 1 \
-          --no-interaction  # ← 新增此参数（0.84.0 实际支持）
+          --no-interaction  # ← 必须存在！
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
