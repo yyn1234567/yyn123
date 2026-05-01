@@ -9,16 +9,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build APK
-        uses: ArtemSBulgakov/buildozer-action@v1
-        with:
-          workdir: '.'
-          command: buildozer android debug
+      - name: Build APK using Buildozer Docker image
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/app \
+            kivy/buildozer \
+            /bin/sh -c "cd /app && buildozer android debug"
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: tomato-novel-apk
