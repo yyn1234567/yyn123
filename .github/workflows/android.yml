@@ -7,46 +7,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-
-    - name: Install Flet (v0.84.0)
-      run: pip install flet==0.84.0
-
-    - name: Build Android APK (WORKING)
-      timeout-minutes: 25
-      env:
-        FLUTTER_SKIP_CONFIRM: "1"
-        CI: "true"  # 注意：必须是字符串 "true" 而非 "1"
-      run: |
-        # 创建终端欺骗补丁
-        echo "import sys; sys.stdin.isatty = lambda: False" > $HOME/tty_patch.py
-        export PYTHONSTARTUP=$HOME/tty_patch.py
-        
-        # 验证补丁生效（必须输出 False！）
-        echo "=== VERIFYING TERMINAL FIX ==="
-        python -c "import sys; print('isatty:', sys.stdin.isatty())"
-        # 期望输出: isatty: False
-        
-        # 关键：用 yes 自动确认安装
-        yes | flet build apk \
-          --bundle-id com.yyn123.fq \
-          --product "煲汤-Tb" \
-          --org com.yyn123 \
-          --build-version 2.0.0 \
-          --build-number 1
-          
-    - name: Debug - Find APK  # 侦查步骤
-      run: |
-        echo "=== 正在寻找 APK 文件 ==="
-        find . -name "*.apk"  # 全盘搜索所有 apk 文件
-        ls -R build/          # 打印 build 目录下的所有文件
-
+    
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-release
-        path: build/apk/release/app-release.apk
+        name: yyn123
+        path: build/apk/yyn123.apk
