@@ -1,0 +1,35 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android APK
+    # 关键修改：使用 Buildozer 官方镜像，避免手动安装依赖
+    container: kivy/buildozer:latest 
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 构建 Debug APK
+        run: |
+          # 增加超时时间容忍，并开启详细日志
+          buildozer -v android debug
+          
+        # 环境变量：防止因语言环境导致的编码错误
+        env:
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
+          # 必须设置：告诉 Buildozer 我们在 CI 环境中，不要交互
+          BUILD_WITH_PYTHON: python
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: bin/*.apk
