@@ -23,25 +23,19 @@ jobs:
       run: pip install flet
 
     - name: Build Android APK
-      # 修改为直接运行 flet 命令，不再引用外部 Action
+      # 修正关键点：使用 flet build apk + 正确参数
       run: |
-        flet build android \
-          --app-id com.yyn123.fq \ # ⚠️ 请务必修改此处ID
+        flet build apk \
+          --bundle-id com.yyn123.fq \  # 必须修改为你的唯一包名
           --app-name "煲汤-Tb" \
-          --version 2.0
-      # 注意：Flet 会自动在 build/android 目录下生成文件
+          --build-version 2.0 \
+          --build-number 1
+      # 注意：输出路径已变更为 build/apk/release/app-release.apk
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4 # 更新到 v4
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: android-apk
-        path: build/android/app/build/outputs/apk/release/app-release.apk
-        if-no-files-found: error # 改为 error 以便及时发现构建失败
-
-    # 可选：如果你需要自动创建 Release，取消下面的注释
-    # - name: Create Release
-    #   uses: softprops/action-gh-release@v2
-    #   if: startsWith(github.ref, 'refs/tags/')
-    #   with:
-    #     files: build/android/app/build/outputs/apk/release/app-release.apk
+        path: build/apk/release/app-release.apk  # 修正输出路径
+        if-no-files-found: error
