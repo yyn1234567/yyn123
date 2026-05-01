@@ -11,5 +11,5 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: yyn123
-        path: build/apk/yyn123.apk
+        name: app-release
+        path: ./build/flutter/build/app/outputs/apk/release/app-release.apk
