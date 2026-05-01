@@ -1,36 +1,45 @@
 [app]
 
-# 应用名称（打包后的 APK 标题）
-title = 番茄小说下载器
+# (str) 应用标题
+title = fq
 
-# 包名（必须唯一，不能与已有应用冲突）
-package.name = com.tomatonovel.downloader
+# (str) 包名 (必须是唯一的域名格式)
+package.name = com.example.noveldownloader
 
-# 入口文件
-source.include_exts = py
-source.include_patterns = main.py
+# (str) 包域名
+package.domain = org.example
 
-# 依赖（仅需 Kivy，其他标准库）
-requirements = python3,kivy
+# (list) 源代码目录
+source.dir = .
 
-# 权限（网络 + 存储）
-android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
+# (list) 源代码文件扩展名
+source.include_exts = py,png,jpg,kv,atlas
 
-# 应用图标（可选，可后续替换）
+# (list) 需要的Python包
+# 注意：urllib 和 json 是标准库，不需要额外安装
+requirements = python3, kivy, urllib3, certifi
+
+# (str) 图标 (可选，如果没有则使用默认)
 # icon.filename = %(source.dir)s/icon.png
 
-# 版本
-version = 1.0
-version.code = 1
+# (int) 启动屏背景颜色 (十六进制)
+# bootstrap.default_bg = #FFFFFF
 
-# 避免打包不必要的文件，加快构建
-source.exclude_dirs = .git, __pycache__, .buildozer
-source.exclude_patterns = *.pyc, *.pyo, .DS_Store
-
-# 安卓最小 / 目标 API（保持默认即可）
+# Android 配置
+[android]
+# (int) Android API 版本
+android.api = 30
+# (int) SDK 版本
 android.minapi = 21
-android.ndk = 19b
+# (str) NDK 版本 (Buildozer会自动下载)
+# ndk = 25b
 
-# 着色样式（让状态栏与应用适配）
-fullscreen = 0
-android.statusbar_color = "#2196F3"
+# (list) 需要的权限
+android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE
+
+# (str) 编译模式 (debug 或 release)
+# production = 0
+
+[buildozer]
+# (int) 日志级别 (0 = 所有, 10 = INFO, 20 = WARNING, 30 = ERROR)
+log_level = 20
