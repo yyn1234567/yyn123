@@ -13,25 +13,30 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Flet
-      run: pip install flet==0.84.0
+    - name: Install Fixed Flet
+      run: pip install flet==0.84.1  # 关键：使用修复版本
 
-    # ✅ 关键修复：环境变量严格绑定到步骤
-    - name: Verify Environment  # 调试步骤（发布时可删除）
+    - name: Disable Analytics
       run: |
-        echo "FLUTTER_SKIP_CONFIRM=$FLUTTER_SKIP_CONFIRM"
-        python -c "import os; print('Flet sees:', os.environ.get('FLUTTER_SKIP_CONFIRM'))"
+        echo "FLUTTER_ANALYTICS_DISABLED=1" >> $GITHUB_ENV
+        echo "PUB_HOSTED_URL=https://pub.flutter-io.cn" >> $GITHUB_ENV
 
-    - name: Build Android APK
-      env:  # ✅ 必须在这里！
-        FLUTTER_SKIP_CONFIRM: "1"  # 值必须是字符串
-      run: >
-        flet build apk
-        --bundle-id com.yyn123.fq
-        --product "煲汤-Tb"
-        --org com.yyn123
-        --build-version 2.0.0
-        --build-number 1
+    - name: Build Android APK (FINAL FIX)
+      timeout-minutes: 25
+      env:
+        FLUTTER_SKIP_CONFIRM: "1"
+        CI: "1"  # 双重保险
+      run: |
+        # 终端欺骗补丁（0.84.1 仍需此步骤）
+        echo "import sys; sys.stdin.isatty = lambda: False" > /tmp/tty_patch.py
+        export PYTHONPATH=/tmp:$PYTHONPATH
+        
+        flet build apk \
+          --bundle-id com.yyn123.fq \
+          --product "煲汤-Tb" \
+          --org com.yyn123 \
+          --build-version 2.0.0 \
+          --build-number 1
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
