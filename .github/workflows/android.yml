@@ -7,9 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build with Flet
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -20,22 +18,19 @@ jobs:
         python-version: '3.11'
 
     - name: Install Flet
-      run: pip install flet
+      run: pip install flet==0.84.0  # 显式指定版本避免波动
 
     - name: Build Android APK
-      # 修正关键点：使用 flet build apk + 正确参数
-      run: |
-        flet build apk \
-          --bundle-id com.yyn123.fq \  # 必须修改为你的唯一包名
-          --app-name "煲汤-Tb" \
-          --build-version 2.0 \
-          --build-number 1
-      # 注意：输出路径已变更为 build/apk/release/app-release.apk
+      # ✅ 修复关键：单行命令（无续行符）
+      run: flet build apk --bundle-id com.yyn123.fq --app-name "煲汤-Tb" --build-version 2.0.0 --build-number 1
+
+    - name: Verify APK
+      # 诊断步骤：确认文件生成位置
+      run: ls -lh build/apk/release/
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
-      if: always()
       with:
         name: android-apk
-        path: build/apk/release/app-release.apk  # 修正输出路径
-        if-no-files-found: error
+        path: build/apk/release/app-release.apk
+        if-no-files-found: error  # 严格检查
