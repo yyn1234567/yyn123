@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (100% Reliable)
 
 on:
   push:
@@ -8,34 +8,37 @@ on:
 jobs:
   build:
     name: Build Android APK
-    container: kivy/buildozer:latest
+    container:
+      image: kivy/buildozer:latest
+      # 关键修复：显式设置容器环境变量（解决传递失效问题）
+      env:
+        BUILDING_IN_CI: "1"  # 必须在此处设置！GitHub Actions 容器变量传递规则
+        LC_ALL: C.UTF-8
+        LANG: C.UTF-8
+        PYTHONUNBUFFERED: "1"
     runs-on: ubuntu-latest
     
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 预接受 Android SDK 许可协议 (关键修复)
+      - name: 预接受 Android SDK 许可协议 (双重保险)
         run: |
-          # 创建 Buildozer 实际使用的许可协议目录
+          # 创建许可目录（Buildozer 实际使用路径）
           mkdir -p $HOME/.android/licenses
           
-          # 写入官方许可协议哈希值（Build-Tools 37 必需）
+          # 写入官方许可哈希（Build-Tools 37+ 必需）
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $HOME/.android/licenses/android-sdk-license
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/licenses/android-sdk-license
           
-          # 验证许可协议已创建
+          # 验证许可文件
           cat $HOME/.android/licenses/android-sdk-license
 
-      - name: 构建 Debug APK
+      - name: 构建 Debug APK (强制跳过所有确认)
         run: |
-          buildozer -v android debug
-        env:
-          # 同时解决两个问题：
-          BUILDING_IN_CI: 1       # 跳过 Root 权限警告
-          LC_ALL: C.UTF-8
-          LANG: C.UTF-8
-          PYTHONUNBUFFERED: 1
+          # 双重保险：环境变量 + 命令行参数
+          buildozer -y -v android debug
+        # 注意：此处无需再设 env（已在 container 级设置）
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
