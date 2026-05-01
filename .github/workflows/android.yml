@@ -1,8 +1,6 @@
 name: Build Android APK
 
-on:
-  push:
-    branches: [main]
+on: [push]
 
 jobs:
   build:
@@ -18,10 +16,15 @@ jobs:
     - name: Install Flet
       run: pip install flet==0.84.0
 
-    # ✅ 关键修复：添加环境变量跳过确认
+    # ✅ 关键修复：环境变量严格绑定到步骤
+    - name: Verify Environment  # 调试步骤（发布时可删除）
+      run: |
+        echo "FLUTTER_SKIP_CONFIRM=$FLUTTER_SKIP_CONFIRM"
+        python -c "import os; print('Flet sees:', os.environ.get('FLUTTER_SKIP_CONFIRM'))"
+
     - name: Build Android APK
-      env:
-        FLUTTER_SKIP_CONFIRM: 1  # 必须！
+      env:  # ✅ 必须在这里！
+        FLUTTER_SKIP_CONFIRM: "1"  # 值必须是字符串
       run: >
         flet build apk
         --bundle-id com.yyn123.fq
