@@ -3,7 +3,7 @@ name: Build APK
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,11 +12,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build APK with Buildozer
+      - name: Build APK
         uses: ArtemSBulgakov/buildozer-action@v1
         with:
           workdir: '.'
-          package_name: 'com.tomatonovel.downloader'
+          command: buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
