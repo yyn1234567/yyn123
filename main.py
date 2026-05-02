@@ -10,7 +10,7 @@ import traceback
 class NovelDownloader:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.output_dir = os.path.join(os.path.dirname(__file__), "novels") # Flet 打包后的工作目录处理
+        self.output_dir = os.path.join(os.path.dirname(__file__), "novels")
         os.makedirs(self.output_dir, exist_ok=True)
 
     def clean_filename(self, name):
@@ -29,7 +29,7 @@ class NovelDownloader:
         BASE_URL = "https://oiapi.net/api/FqRead"
         API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
         MAX_RETRIES = 3
-        TIMEOUT = aiohttp.ClientTimeout(total=30)
+        TIMEOUT = aiohttp.ClientTimeout(total=10)  # 缩短超时时间到10秒
 
         url = f"{BASE_URL}?{url_params}&key={API_KEY}"
         
@@ -44,7 +44,7 @@ class NovelDownloader:
                             raise Exception(f"HTTP错误: {response.status}")
                 except (asyncio.TimeoutError, aiohttp.ClientError) as e:
                     if attempt < MAX_RETRIES - 1:
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(1)  # 缩短重试等待时间到1秒
                     else:
                         raise Exception(f"网络请求失败: {str(e)}")
                 except json.JSONDecodeError as e:
@@ -76,14 +76,16 @@ class NovelDownloader:
         """异步下载小说，通过 update_status 回调更新 UI"""
         try:
             # 1. 获取书籍信息
-            update_status("获取书籍信息...", 0)
+            update_status("正在连接服务器...", 0)
+            await asyncio.sleep(0.1)  # 确保UI更新
             book_info = await self.get_book_info(book_id)
             book_title = book_info['title']
             author = book_info['author']
             intro = book_info.get('docs', '').replace('\n', ' ')
 
             # 2. 获取章节列表
-            update_status("获取章节列表...", 5)
+            update_status("正在获取章节列表...", 5)
+            await asyncio.sleep(0.1)  # 确保UI更新
             chapters_data = await self.get_chapter_list(book_id)
             chapters = []
             for volume in chapters_data:
@@ -96,6 +98,8 @@ class NovelDownloader:
                 raise Exception("未找到章节")
 
             # 3. 准备文件
+            update_status("正在准备文件...", 10)
+            await asyncio.sleep(0.1)  # 确保UI更新
             safe_title = self.clean_filename(book_title)
             output_file = os.path.join(self.output_dir, f"{safe_title}.txt")
 
@@ -116,6 +120,8 @@ class NovelDownloader:
                 end = min(start + BATCH_SIZE - 1, total_chapters)
 
                 try:
+                    update_status(f"正在下载章节 {start}-{end}...", 10 + (start/total_chapters)*80)
+                    await asyncio.sleep(0.05)  # 减少等待时间
                     batch_data = await self.get_chapter_contents_batch(book_id, start, end)
                     # 转为字典
                     chapter_dict = {}
@@ -130,7 +136,7 @@ class NovelDownloader:
                         original_chapter = next((ch for ch in chapters if ch.get('index') == chap_idx), None)
                         title = original_chapter['title'] if original_chapter else chapter_info.get('chapter_title', f'第{chap_idx}章')
 
-                        progress = (chap_idx / total_chapters) * 100
+                        progress = 10 + (chap_idx / total_chapters) * 90
                         update_status(f"下载中: {title}", progress)
 
                         if chapter_info:
@@ -148,7 +154,7 @@ class NovelDownloader:
 
                 except Exception as e:
                     # 批量失败则单章重试（简化版，直接记录错误）
-                    update_status(f"章节 {start}-{end} 下载失败: {str(e)}", (start/total_chapters)*100)
+                    update_status(f"章节 {start}-{end} 下载失败: {str(e)}", 10 + (start/total_chapters)*90)
                     try:
                         for chap_idx in range(start, end + 1):
                             with open(output_file, 'a', encoding='utf-8') as f:
@@ -181,8 +187,33 @@ async def main(page: ft.Page):
     # 用于存储下载结果的文本控件
     result_text = ft.Text("", size=12, selectable=True)
 
+    # 权限请求标志
+    permissions_granted = False
+
+    async def check_and_request_permissions():
+        """检查并请求必要的Android权限"""
+        nonlocal permissions_granted
+        
+        # 定义需要的权限
+        required_permissions = [
+            "android.permission.INTERNET",
+            "android.permission.WRITE_EXTERNAL_STORAGE",
+            "android.permission.READ_EXTERNAL_STORAGE"
+        ]
+        
+        try:
+            # 尝试请求权限
+            permissions_result = await page.request_permission(*required_permissions)
+            permissions_granted = all(permissions_result.values())
+            return permissions_granted
+        except Exception as e:
+            # 如果平台不支持权限请求，默认返回True
+            return True
+
     async def on_download_click(e):
         """下载按钮点击事件处理器"""
+        nonlocal permissions_granted
+        
         book_id = book_id_field.value.strip()
         if not book_id:
             status_text.value = "错误：请输入 Book ID"
@@ -190,8 +221,8 @@ async def main(page: ft.Page):
             await page.update_async()
             return
 
-        # 重置状态
-        status_text.value = "开始下载..."
+        # 立即更新UI状态
+        status_text.value = "正在准备下载..."
         status_text.color = "blue"
         progress_bar.value = 0
         progress_bar.visible = True
@@ -207,9 +238,24 @@ async def main(page: ft.Page):
 
         # 在异步任务中运行下载（防止阻塞 UI）
         try:
+            # 检查和请求权限
+            if not permissions_granted:
+                update_status("正在请求权限...", 0)
+                await page.update_async()
+                
+                if not await check_and_request_permissions():
+                    update_status("权限被拒绝，无法下载", 0)
+                    await page.update_async()
+                    result_text.value = "请授予应用存储和网络权限后重试。"
+                    await page.update_async()
+                    return
+                
+                update_status("权限已获取，正在准备...", 0)
+                await page.update_async()
+
             # 直接调用异步的download_novel
             file_path = await downloader.download_novel(book_id, update_status)
-            
+
             # 更新UI显示结果
             await page.update_async()
 
@@ -218,9 +264,11 @@ async def main(page: ft.Page):
             else:
                 status_text.value = "下载失败"
                 status_text.color = "red"
+                result_text.value = "下载过程中出现错误，请检查网络连接后重试。"
         except Exception as ex:
             status_text.value = f"系统错误: {str(ex)}"
             status_text.color = "red"
+            result_text.value = "发生系统错误，请稍后重试。"
         finally:
             progress_bar.visible = False
             await page.update_async()
