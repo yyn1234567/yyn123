@@ -40,19 +40,17 @@ jobs:
 
       - name: Build Android APK
         env:
-          FLUTTER_SKIP_CONFIRM: "1"
+          FLUTTER_SKIP_CONFIRM: "true"
           CI: "true"
         run: |
-          echo "import sys; sys.stdin.isatty = lambda: False" > $HOME/tty_patch.py
-          export PYTHONSTARTUP=$HOME/tty_patch.py
-          echo "=== VERIFYING TERMINAL FIX ==="
-          python -c "import sys; print('isatty:', sys.stdin.isatty())"
-          yes | flet build apk \
+          flet build apk \
             --bundle-id com.yyn123.fq \
             --product "煲汤-Tb" \
             --org com.yyn123 \
             --build-version 2.0.0 \
-            --build-number 1
+            --build-number 1 \
+            --no-release-confirm \
+            --pyscript-args "-u"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
