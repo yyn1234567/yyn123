@@ -1,15 +1,15 @@
 [app]
-title = fq
+title = 煲汤-Tb
 package.name = com.yyn123.fq
 package.domain = com.yyn123.fq
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
-version = 2.0.3
-requirements = python3,kivy,libiconv,libffi
+source.include_exts = py,png,jpg,kv,atlas,ttf
+version = 2.0.4
+requirements = python3,kivy,certifi,libiconv,libffi
 icon.filename = icon.png
 #presplash.filename = presplash.png
-#fullscreen = 0
-#orientation = portrait
+fullscreen = 0
+orientation = portrait
 entrypoint = main.py
 
 #这些不要改 Don't change these

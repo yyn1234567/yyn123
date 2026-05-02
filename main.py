@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-番茄小说下载器 - Kivy 安卓版
+番茄小说下载器 - Kivy 安卓版（修复版）
 """
 
 import json
@@ -11,6 +11,10 @@ import os
 import time
 import re
 import threading
+import certifi
+import ssl
+
+os.environ['SSL_CERT_FILE'] = certifi.where()   # 修复 SSL 证书问题
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -19,6 +23,7 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
+from kivy.core.text import LabelBase
 
 # ========== 原 API 配置 ==========
 BASE_URL = "https://oiapi.net/api/FqRead"
@@ -27,7 +32,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2
 TIMEOUT = 30
 
-# ========== 工具函数（同原脚本）==========
+# ========== 工具函数 ==========
 def clean_filename(name):
     return re.sub(r"[\/\\\:\*\?\"\<\>\|]", "_", name)
 
@@ -35,6 +40,7 @@ def api_request(url_params):
     url = f"{BASE_URL}?{url_params}&key={API_KEY}"
     for attempt in range(MAX_RETRIES):
         try:
+            # 使用默认 SSL 上下文，由 certifi 提供根证书
             with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
                 data = response.read().decode('utf-8')
                 return json.loads(data)
@@ -83,15 +89,13 @@ class NovelDownloader(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation='vertical', **kwargs)
 
-        # 标题
         self.add_widget(Label(
-            text='fq v2.0.3',
+            text='fq v2.0.4',
             size_hint=(1, 0.1),
             bold=True,
             font_size='20sp'
         ))
 
-        # 输入框
         self.book_id_input = TextInput(
             hint_text='请输入book id',
             size_hint=(1, 0.1),
@@ -99,7 +103,6 @@ class NovelDownloader(BoxLayout):
         )
         self.add_widget(self.book_id_input)
 
-        # 下载按钮
         self.download_btn = Button(
             text='开始下载',
             size_hint=(1, 0.1)
@@ -107,15 +110,12 @@ class NovelDownloader(BoxLayout):
         self.download_btn.bind(on_press=self.start_download)
         self.add_widget(self.download_btn)
 
-        # 输出区域（滚动）
         self.output_label = Label(
             text='',
             size_hint_y=None,
             halign='left',
-            valign='top',
-            text_size=(None, None)  # 宽度会在绑定后设置
+            valign='top'
         )
-        self.output_label.bind(texture_size=self._update_label_height)
         self.scroll_view = ScrollView(size_hint=(1, 0.7))
         self.scroll_view.add_widget(self.output_label)
         self.add_widget(self.scroll_view)
@@ -240,9 +240,10 @@ class NovelDownloader(BoxLayout):
                 self.download_btn.disabled = False
             Clock.schedule_once(enable_btn, 0)
 
-
 class TomatoNovelApp(App):
     def build(self):
+        # 注册中文字体（需将字体文件 font.ttf 放在项目目录）
+        LabelBase.register(name='Roboto', fn_regular='font.ttf')
         return NovelDownloader()
 
 if __name__ == '__main__':
