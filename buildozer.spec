@@ -1,17 +1,16 @@
 [app]
-title = fq#允许中文 Chinese allowed
+title = fq
 package.name = com.yyn123.fq
-package.domain = com.yyn123.fq#release模式不能用org.test 'org.test' can't be used in release mode
-source.dir = .#工作目录 working directory
-source.include_exts = py,png,jpg,kv,atlas#需要打包的文件类型 file types to be packed
+package.domain = com.yyn123.fq
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
 version = 2.0.3
-#依赖库,后二为打包需要 The last two are needed for packaging
 requirements = python3,kivy,libiconv,libffi
 icon.filename = icon.png
 #presplash.filename = presplash.png
 #fullscreen = 0
 #orientation = portrait
-entrypoint = main.py#主程序 Main,what can I say.Mamba out
+entrypoint = main.py
 
 #这些不要改 Don't change these
 android.accept_sdk_license = True
@@ -27,7 +26,7 @@ android.ndk_api = 21
 p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
-android.permissions = INTERNET#打包需要网络权限 Network permission is required for packaging
+android.permissions = INTERNET
 
 #以下为release模式需要 Following is required for release mode
 
@@ -35,10 +34,10 @@ android.permissions = INTERNET#打包需要网络权限 Network permission is re
 #android.aab = False
 
 #签名配置 signature configuration
-#android.keystore = /home/runner/work/RepositoryName/AndAgain/DomainName.PackageName.keystore
+#android.keystore = /home/runner/work/yyn123/AndAgain/com.yyn123.fq.keystore
 #android.keystore_storepass = android
 #android.keystore_keypass = android
-#android.keystore_alias = DomainName.PackageName
+#android.keystore_alias = com.yyn123.fq
 
 [buildozer]
 log_level = 2
