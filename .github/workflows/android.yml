@@ -1,78 +1,77 @@
 name: Build Android APK
 
-on: 
-  workflow_dispatch: # 手动触发
+on:
+  workflow_dispatch:
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      # ──────────────── STEP 1: 基础环境准备 (关键！不能跳过) ────────────────
-      - name: 🛠️ Checkout code
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
-      - name: 📦 Install Flet CLI
-        run: |
-          pip install --upgrade flet==0.84.0
-          flet --version  # 验证安装
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # 确保aiohttp正确安装
+        pip install aiohttp>=3.8.0
 
-      # ──────────────── STEP 2: Flutter 环境初始化 (核心！90% 失败源于此) ────────────────
-      - name: 🌟 Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.19.0"  # 与 Flet 0.84.0 兼容的官方推荐版本
-          channel: "stable"
-          cache: true
-          cache-key: "flutter-3.19.0"
+    - name: Verify installation
+      run: |
+        python -c "import flet; print('Flet version:', flet.__version__)"
+        python -c "import aiohttp; print('aiohttp version:', aiohttp.__version__)"
 
-      # ──────────────── STEP 3: Android SDK 许可证处理 (必须严格按此顺序！) ────────────────
-      - name: 🔑 Accept Android Licenses
-        run: |
-          # 关键1：强制跳过所有交互式确认
-          flutter config --no-analytics
-          flutter config --no-source-maps
+    - name: Build Android APK
+      timeout-minutes: 30
+      env:
+        FLUTTER_SKIP_CONFIRM: "1"
+        CI: "true"
+      run: |
+        # 创建终端欺骗补丁
+        echo "import sys; sys.stdin.isatty = lambda: False" > $HOME/tty_patch.py
+        export PYTHONSTARTUP=$HOME/tty_patch.py
 
-          # 关键2：可靠接受所有许可证 (echo y | 比 yes | 稳定10倍)
-          echo y | flutter doctor --android-licenses 2>&1 | grep -v "W: "
+        # 验证补丁生效
+        echo "=== VERIFYING TERMINAL FIX ==="
+        python -c "import sys; print('isatty:', sys.stdin.isatty())"
 
-          # 关键3：修复 Android SDK 路径问题 (99% CI 卡顿的根源)
-          mkdir -p ~/.android
-          echo "android.sdk.path=$ANDROID_HOME" > ~/.android/repositories.cfg
-          chmod 600 ~/.android/repositories.cfg  # 防止权限错误
+        # 确保main.py存在
+        if [ ! -f "main.py" ]; then
+          echo "Error: main.py not found!"
+          exit 1
+        fi
 
-          # 关键4：验证许可证状态
-          flutter doctor -v | grep "Android SDK"
+        # 使用yes自动确认安装，并添加额外的构建选项
+        yes | flet build apk \
+          --bundle-id com.yyn123.fq \
+          --product "煲汤-Tb" \
+          --org com.yyn123 \
+          --build-version 2.0.1 \
+          --build-number 2
 
-      # ──────────────── STEP 4: 最终构建 (无任何自定义参数！) ────────────────
-      - name: 📱 Build APK
-        env:
-          # 关键环境变量 (必须全大写)
-          FLUTTER_SKIP_CONFIRM: "true"  # 跳过 Flutter 所有确认
-          CI: "true"                    # 声明 CI 环境
-          PYTHONUNBUFFERED: "1"         # 禁用 Python 缓冲
-          JAVA_HOME: ${{ steps.setup_java.outputs.JAVA_HOME }}  # 确保 Java 路径正确
-        run: |
-          flet build apk \
-            --bundle-id com.yyn123.fq \
-            --product "煲汤-Tb" \
-            --org com.yyn123 \
-            --build-version 2.0.0 \
-            --build-number 1 \
-            --release  # 显式指定 release 构建 (Flet 0.84.0 必须参数！)
+    - name: Check build output
+      run: |
+        echo "Build output directory contents:"
+        ls -la build/apk/ || echo "No APK files found"
 
-      # ──────────────── STEP 5: 保存产物 (可选但推荐) ────────────────
-      - name: 📤 Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: build/app/*.apk
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: build/apk/*.apk
+        retention-days: 30
+
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          build/**/logs/
+          **/*.log
+        retention-days: 7
