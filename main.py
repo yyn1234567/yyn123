@@ -168,7 +168,7 @@ async def main(page: ft.Page):
             status_text.color = "red"
             await page.update_async()
             return
-
+    
         # 重置状态
         status_text.value = "开始下载..."
         status_text.color = "blue"
@@ -176,35 +176,34 @@ async def main(page: ft.Page):
         progress_bar.visible = True
         result_text.value = ""
         await page.update_async()
-
-        # 定义更新函数（闭包）
-        def update_status(text, progress):
-            # 这个函数在后台线程运行，需要通过 asyncio 来更新主线程 UI
-            async def update_ui():
-                status_text.value = text
-                if progress >= 0:
-                    progress_bar.value = progress / 100
-                await page.update_async()
-            # 调度到主线程
-            asyncio.create_task(update_ui())
-
-        # 在异步任务中运行下载（防止阻塞 UI）
-        try:
-            # 注意：download_novel 是同步阻塞的，我们需要在 executor 中运行它
+    
+        # --- 关键修改点：使用 Task 而不是直接 run_in_executor，防止阻塞 ---
+        # 定义一个包装函数，用于在事件循环中运行
+        async def run_download():
             loop = asyncio.get_event_loop()
+            # 将耗时的同步函数丢到线程池
             file_path = await loop.run_in_executor(None, lambda: downloader.download_novel(book_id, update_status))
-            
+            return file_path
+    
+        # 启动任务
+        download_task = asyncio.create_task(run_download())
+    
+        try:
+            file_path = await download_task
             if file_path:
-                result_text.value = f"文件已保存至:\n{file_path}\n\n注意：在 Android 上，文件通常位于应用沙盒内，可通过文件管理器查找 Flet 相关目录。"
+                result_text.value = f"文件已保存至:\n{file_path}\n\n注意：Android 10+ 可能需要通过“文件”App访问。"
             else:
                 status_text.value = "下载失败"
                 status_text.color = "red"
         except Exception as ex:
             status_text.value = f"系统错误: {str(ex)}"
             status_text.color = "red"
+            # 打印详细错误到日志（在 Logcat 中可见）
+            print(f"Download Exception: {ex}")
         finally:
             progress_bar.visible = False
             await page.update_async()
+
 
     # 构建页面布局
     page.add(
