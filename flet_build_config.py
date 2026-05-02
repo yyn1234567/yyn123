@@ -8,8 +8,8 @@ class FletBuildConfig:
     APP_BUNDLE_ID = "com.yyn123.fq"
     APP_ORG = "com.yyn123"
     APP_PRODUCT = "煲汤-Tb"
-    BUILD_VERSION = "2.0.2"
-    BUILD_NUMBER = "3"
+    BUILD_VERSION = "2.0.3"
+    BUILD_NUMBER = "4"
     
     # Android权限配置
     ANDROID_PERMISSIONS = [
