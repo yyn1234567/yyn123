@@ -1,1 +1,2 @@
-flet
+flet==0.84.0
+aiohttp>=3.8.0

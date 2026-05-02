@@ -1,11 +1,10 @@
 import flet as ft
 import json
-import urllib.request
-import urllib.error
 import os
-import time
 import re
 import asyncio
+import aiohttp
+import traceback
 
 # --- 原有业务逻辑重构 (保持核心逻辑不变) ---
 class NovelDownloader:
@@ -25,58 +24,67 @@ class NovelDownloader:
         content = re.sub(r'\n+', '\n', content).strip()
         return content
 
-    def api_request(self, url_params):
-        # 注意：在 Flet 中，网络请求不能阻塞主线程，建议使用 aiohttp，但为了兼容原代码，这里保留同步并用线程池
-        # 但在 Flet Desktop 中可能警告，Android 打包通常没问题
+    async def api_request(self, url_params):
+        """异步API请求，使用aiohttp"""
         BASE_URL = "https://oiapi.net/api/FqRead"
         API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
         MAX_RETRIES = 3
-        TIMEOUT = 30
+        TIMEOUT = aiohttp.ClientTimeout(total=30)
 
         url = f"{BASE_URL}?{url_params}&key={API_KEY}"
-        for attempt in range(MAX_RETRIES):
-            try:
-                with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
-                    data = response.read().decode('utf-8')
-                    return json.loads(data)
-            except Exception as e:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(2)
-                else:
-                    raise e
+        
+        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
+            for attempt in range(MAX_RETRIES):
+                try:
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            data = await response.text()
+                            return json.loads(data)
+                        else:
+                            raise Exception(f"HTTP错误: {response.status}")
+                except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(2)
+                    else:
+                        raise Exception(f"网络请求失败: {str(e)}")
+                except json.JSONDecodeError as e:
+                    raise Exception(f"JSON解析失败: {str(e)}")
+                except Exception as e:
+                    raise Exception(f"未知错误: {str(e)}")
         return None
 
-    def get_book_info(self, book_id):
-        result = self.api_request(f"method=ids&id={book_id}")
+    async def get_book_info(self, book_id):
+        result = await self.api_request(f"method=ids&id={book_id}")
         if result and result.get('code') == 1:
             return result['data']
         raise Exception(result.get('message', '获取书籍信息失败'))
 
-    def get_chapter_list(self, book_id):
-        result = self.api_request(f"method=chapters&id={book_id}")
+    async def get_chapter_list(self, book_id):
+        result = await self.api_request(f"method=chapters&id={book_id}")
         if result and result.get('code') == 1:
             return result['data']
         raise Exception(result.get('message', '获取章节列表失败'))
 
-    def get_chapter_contents_batch(self, book_id, start_index, end_index):
+    async def get_chapter_contents_batch(self, book_id, start_index, end_index):
         chapter_range = f"{start_index}-{end_index}"
-        result = self.api_request(f"method=chapter&id={book_id}&chapter={chapter_range}")
+        result = await self.api_request(f"method=chapter&id={book_id}&chapter={chapter_range}")
         if result and result.get('code') == 1:
             return result['data']
         raise Exception(result.get('message', '批量获取章节内容失败'))
 
-    def download_novel(self, book_id, update_status):
-        """下载小说，通过 update_status 回调更新 UI"""
+    async def download_novel(self, book_id, update_status):
+        """异步下载小说，通过 update_status 回调更新 UI"""
         try:
             # 1. 获取书籍信息
             update_status("获取书籍信息...", 0)
-            book_info = self.get_book_info(book_id)
+            book_info = await self.get_book_info(book_id)
             book_title = book_info['title']
             author = book_info['author']
             intro = book_info.get('docs', '').replace('\n', ' ')
-            
+
             # 2. 获取章节列表
-            chapters_data = self.get_chapter_list(book_id)
+            update_status("获取章节列表...", 5)
+            chapters_data = await self.get_chapter_list(book_id)
             chapters = []
             for volume in chapters_data:
                 if isinstance(volume, list):
@@ -90,12 +98,15 @@ class NovelDownloader:
             # 3. 准备文件
             safe_title = self.clean_filename(book_title)
             output_file = os.path.join(self.output_dir, f"{safe_title}.txt")
-            
+
             # 写入基本信息
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(f"{book_title}\n")
-                f.write(f"作者: {author}\n")
-                f.write(f"简介:\n{intro}\n\n")
+            try:
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(f"{book_title}\n")
+                    f.write(f"作者: {author}\n")
+                    f.write(f"简介:\n{intro}\n\n")
+            except IOError as e:
+                raise Exception(f"无法创建文件: {str(e)}")
 
             # 4. 下载章节
             BATCH_SIZE = 30
@@ -103,9 +114,9 @@ class NovelDownloader:
                 if start > total_chapters:
                     break
                 end = min(start + BATCH_SIZE - 1, total_chapters)
-                
+
                 try:
-                    batch_data = self.get_chapter_contents_batch(book_id, start, end)
+                    batch_data = await self.get_chapter_contents_batch(book_id, start, end)
                     # 转为字典
                     chapter_dict = {}
                     for item in batch_data:
@@ -118,7 +129,7 @@ class NovelDownloader:
                         chapter_info = chapter_dict.get(chap_idx)
                         original_chapter = next((ch for ch in chapters if ch.get('index') == chap_idx), None)
                         title = original_chapter['title'] if original_chapter else chapter_info.get('chapter_title', f'第{chap_idx}章')
-                        
+
                         progress = (chap_idx / total_chapters) * 100
                         update_status(f"下载中: {title}", progress)
 
@@ -126,22 +137,31 @@ class NovelDownloader:
                             content = self.clean_content(chapter_info.get('content', ''))
                             if content.lstrip().startswith(title):
                                 content = content.lstrip()[len(title):].strip()
-                            f.write(f"{title}\n{content}\n\n")
+                            try:
+                                with open(output_file, 'a', encoding='utf-8') as f:
+                                    f.write(f"{title}\n{content}\n\n")
+                            except IOError as e:
+                                raise Exception(f"写入文件失败: {str(e)}")
                         else:
-                            f.write(f"{title}\n[内容缺失]\n\n")
+                            with open(output_file, 'a', encoding='utf-8') as f:
+                                f.write(f"{title}\n[内容缺失]\n\n")
 
                 except Exception as e:
                     # 批量失败则单章重试（简化版，直接记录错误）
                     update_status(f"章节 {start}-{end} 下载失败: {str(e)}", (start/total_chapters)*100)
-                    for chap_idx in range(start, end + 1):
-                        with open(output_file, 'a', encoding='utf-8') as f:
-                            f.write(f"第{chap_idx}章\n[下载失败]\n\n")
+                    try:
+                        for chap_idx in range(start, end + 1):
+                            with open(output_file, 'a', encoding='utf-8') as f:
+                                f.write(f"第{chap_idx}章\n[下载失败]\n\n")
+                    except IOError:
+                        pass  # 忽略写入错误，避免级联失败
 
             update_status("下载完成!", 100)
             return output_file
 
         except Exception as e:
-            update_status(f"错误: {str(e)}", 0)
+            error_msg = f"错误: {str(e)}\n{traceback.format_exc()}"
+            update_status(error_msg.split('\n')[0], 0)
             return None
 
 # --- Flet UI 界面 ---
@@ -157,18 +177,19 @@ async def main(page: ft.Page):
     book_id_field = ft.TextField(label="请输入 Book ID", width=300)
     status_text = ft.Text(value="就绪", color="blue")
     progress_bar = ft.ProgressBar(width=300, value=0, visible=False)
-    
+
     # 用于存储下载结果的文本控件
     result_text = ft.Text("", size=12, selectable=True)
 
     async def on_download_click(e):
+        """下载按钮点击事件处理器"""
         book_id = book_id_field.value.strip()
         if not book_id:
             status_text.value = "错误：请输入 Book ID"
             status_text.color = "red"
             await page.update_async()
             return
-    
+
         # 重置状态
         status_text.value = "开始下载..."
         status_text.color = "blue"
@@ -176,34 +197,33 @@ async def main(page: ft.Page):
         progress_bar.visible = True
         result_text.value = ""
         await page.update_async()
-    
-        # --- 关键修改点：使用 Task 而不是直接 run_in_executor，防止阻塞 ---
-        # 定义一个包装函数，用于在事件循环中运行
-        async def run_download():
-            loop = asyncio.get_event_loop()
-            # 将耗时的同步函数丢到线程池
-            file_path = await loop.run_in_executor(None, lambda: downloader.download_novel(book_id, update_status))
-            return file_path
-    
-        # 启动任务
-        download_task = asyncio.create_task(run_download())
-    
+
+        # 定义更新函数（闭包）
+        def update_status(text, progress):
+            """更新UI状态的回调函数"""
+            status_text.value = text
+            if progress >= 0:
+                progress_bar.value = progress / 100
+
+        # 在异步任务中运行下载（防止阻塞 UI）
         try:
-            file_path = await download_task
+            # 直接调用异步的download_novel
+            file_path = await downloader.download_novel(book_id, update_status)
+            
+            # 更新UI显示结果
+            await page.update_async()
+
             if file_path:
-                result_text.value = f"文件已保存至:\n{file_path}\n\n注意：Android 10+ 可能需要通过“文件”App访问。"
+                result_text.value = f"文件已保存至:\n{file_path}\n\n注意：在 Android 上，文件通常位于应用沙盒内，可通过文件管理器查找 Flet 相关目录。"
             else:
                 status_text.value = "下载失败"
                 status_text.color = "red"
         except Exception as ex:
             status_text.value = f"系统错误: {str(ex)}"
             status_text.color = "red"
-            # 打印详细错误到日志（在 Logcat 中可见）
-            print(f"Download Exception: {ex}")
         finally:
             progress_bar.visible = False
             await page.update_async()
-
 
     # 构建页面布局
     page.add(
