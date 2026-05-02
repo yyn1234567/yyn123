@@ -38,19 +38,25 @@ jobs:
       - name: Install Flet
         run: pip install flet==0.84.0
 
+      - name: Accept Android Licenses
+        run: |
+          yes | flutter doctor --android-licenses
+          mkdir -p ~/.android
+          echo "android.sdk.path=$ANDROID_HOME" > ~/.android/repositories.cfg
+
       - name: Build Android APK
         env:
-          FLUTTER_SKIP_CONFIRM: "true"
-          CI: "true"
+          FLUTTER_SKIP_CONFIRM: "true"   # 跳过 Flutter 所有协议
+          CI: "true"                    # 声明 CI 环境
+          PYTHONUNBUFFERED: "1"         # 禁用 Python 缓冲（关键！）
         run: |
           flet build apk \
             --bundle-id com.yyn123.fq \
             --product "煲汤-Tb" \
             --org com.yyn123 \
             --build-version 2.0.0 \
-            --build-number 1 \
-            --no-release-confirm \
-            --pyscript-args "-u"
+            --build-number 1
+
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
