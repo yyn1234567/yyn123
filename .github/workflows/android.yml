@@ -1,46 +1,61 @@
 name: Build Android APK
 
-on: [push]
+on: 
+  workflow_dispatch: # 手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      # 1. 缓存 Docker 镜像层 (关键优化)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
-    - name: Install Flet (v0.84.0)
-      run: pip install flet==0.84.0
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Build Android APK (WORKING)
-      timeout-minutes: 25
-      env:
-        FLUTTER_SKIP_CONFIRM: "1"
-        CI: "true"  # 注意：必须是字符串 "true" 而非 "1"
-      run: |
-        # 创建终端欺骗补丁
-        echo "import sys; sys.stdin.isatty = lambda: False" > $HOME/tty_patch.py
-        export PYTHONSTARTUP=$HOME/tty_patch.py
-        
-        # 验证补丁生效（必须输出 False！）
-        echo "=== VERIFYING TERMINAL FIX ==="
-        python -c "import sys; print('isatty:', sys.stdin.isatty())"
-        # 期望输出: isatty: False
-        
-        # 关键：用 yes 自动确认安装
-        yes | flet build apk \
-          --bundle-id com.yyn123.fq \
-          --product "煲汤-Tb" \
-          --org com.yyn123 \
-          --build-version 2.0.0 \
-          --build-number 1
+      # 2. 缓存 Python 依赖
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-release
-        path: build/apk/*.apk
+      - name: Install Flet
+        run: pip install flet==0.84.0
+
+      - name: Build Android APK
+        env:
+          FLUTTER_SKIP_CONFIRM: "1"
+          CI: "true"
+        run: |
+          echo "import sys; sys.stdin.isatty = lambda: False" > $HOME/tty_patch.py
+          export PYTHONSTARTUP=$HOME/tty_patch.py
+          echo "=== VERIFYING TERMINAL FIX ==="
+          python -c "import sys; print('isatty:', sys.stdin.isatty())"
+          yes | flet build apk \
+            --bundle-id com.yyn123.fq \
+            --product "煲汤-Tb" \
+            --org com.yyn123 \
+            --build-version 2.0.0 \
+            --build-number 1
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: build/apk/*.apk
