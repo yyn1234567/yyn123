@@ -1,11 +1,11 @@
 [app]
 title = 煲汤-Tb
-package.name = com.yyn123.fq
+package.name = fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 2.0.5
-requirements = python3,kivy,requests,libiconv,libffi
+version = 2.0.6
+requirements = python3,kivy,kivymd,requests,libiconv,libffi
 icon.filename = icon.png
 #presplash.filename = presplash.png
 fullscreen = 0
@@ -26,7 +26,7 @@ android.ndk_api = 21
 p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
-android.permissions = INTERNET
+android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
 
 #以下为release模式需要 Following is required for release mode
 
