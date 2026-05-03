@@ -15,14 +15,15 @@ entrypoint = main.py
 #这些不要改 Don't change these
 android.accept_sdk_license = True
 android.allow_api_min = 21
-android.api = 33
+android.api = 29
 android.minapi = 21
 android.ndk = 25b
 exclude_patterns = **/test/*, **/tests/*
 android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
 android.gradle_plugin = 7.4.2
-android.sdk = 33
+android.sdk = 29
 android.ndk_api = 21
+android.manifest.request_legacy_external_storage = True
 p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64

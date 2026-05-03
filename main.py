@@ -11,18 +11,23 @@ import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- 新增：用于检测平台和调用安卓API ---
 if sys.platform == 'android':
-    try:
-        from android.storage import primary_external_storage_path
-        # 尝试获取安卓外部存储路径（通常是 /storage/emulated/0）
-        download_dir = os.path.join(primary_external_storage_path(), 'Download', 'Novels')
-    except Exception as e:
-        # 如果失败，回退到旧版方法或默认路径
-        download_dir = os.path.expanduser("~/Download/Novels")
-else:
-    # 桌面端默认路径
-    download_dir = os.path.expanduser("~/Download/Novels")
+    from android.permissions import request_permissions, Permission, check_permission
+
+def check_and_request_permission(callback, *args):
+    """请求存储权限，成功后再执行 callback(*args)"""
+    if sys.platform != 'android':
+        callback(*args)
+        return
+    # 检查是否已经拥有读写权限
+    if (check_permission(Permission.WRITE_EXTERNAL_STORAGE) and
+        check_permission(Permission.READ_EXTERNAL_STORAGE)):
+        callback(*args)
+    else:
+        request_permissions(
+            [Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE],
+            lambda perms, grant: callback(*args)  # 授权后执行
+        )
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -114,17 +119,20 @@ class NovelDownloader(BoxLayout):
         if not book_id:
             self._append_output("请输入有效的book id\n")
             return
-            
         self.download_btn.disabled = True
-        self._append_output("正在获取书籍信息...\n")
-        
-        # --- 确保下载目录存在 ---
+        # 先生成目录，再检查权限
         try:
             os.makedirs(download_dir, exist_ok=True)
         except Exception as e:
             self._append_output(f"无法创建目录 {download_dir}: {e}\n")
+            self.download_btn.disabled = False
             return
-            
+        # 请求完权限后会调用 _real_start_download
+        check_and_request_permission(self._real_start_download, book_id)
+
+    def _real_start_download(self, book_id):
+        # 原来下载逻辑的剩余部分（不包含目录创建和按钮禁用）
+        self._append_output("正在获取书籍信息...\n")
         threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
 
     def _append_output(self, text):
