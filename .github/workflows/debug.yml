@@ -48,7 +48,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         #下载依赖库 add your requirements
-        pip install buildozer cython==0.29.33 kivy kivymd
+        pip install buildozer cython==0.29.33 kivy kivymd==0.104.2
         #何意味 You will need it
         pip install python-for-android
 
