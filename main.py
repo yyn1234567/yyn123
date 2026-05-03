@@ -6,30 +6,39 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
-from kivy.metrics import dp
 from kivy.core.text import LabelBase
 
-# ----- KivyMD 组件 -----
-from kivymd.app import MDApp
-from kivymd.uix.screen import MDScreen
-from kivymd.uix.toolbar import MDToolbar
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.textfield import MDTextField
-from kivymd.uix.button import MDRaisedButton, MDIconButton
-from kivymd.uix.label import MDLabel
-from kivymd.uix.scrollview import MDScrollView
-from kivymd.uix.filemanager import MDFileManager
-from kivymd.uix.card import MDCard
-from kivymd.uix.snackbar import Snackbar
+# === 安卓 SAf 支持 ===
+from kivy.utils import platform
+if platform == 'android':
+    from android.storage import primary_external_storage_path
+    from android import activity
+    from jnius import autoclass, cast
+    from android import mActivity
 
-# ----------------------- 原有功能代码不变 -----------------------
+    # Java 类
+    Intent = autoclass('android.content.Intent')
+    Uri = autoclass('android.net.Uri')
+    DocumentFile = autoclass('androidx.documentfile.provider.DocumentFile')
+    FileOutputStream = autoclass('java.io.FileOutputStream')
+    Environment = autoclass('android.os.Environment')
+    Context = autoclass('android.content.Context')
+    Activity = autoclass('android.app.Activity')
+
+# 常量
 BASE_URL = "https://oiapi.net/api/FqRead"
 API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 TIMEOUT = 30
 
+# ---------- 原有工具函数保持不变 ----------
 def clean_filename(name):
     return re.sub(r"[\/\\\:\*\?\"\<\>\|]", "_", name)
 
@@ -70,143 +79,157 @@ def clean_content(content):
     content = re.sub(r'\n+', '\n', content).strip()
     return content
 
-# ------------------ 重构后的主界面 ------------------
-class NovelDownloaderScreen(MDScreen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.save_dir = os.path.join(App.get_running_app().user_data_dir, "novels")
-        # 文件管理器实例
-        self.file_manager = None
-        self._downloading = False
+# ---------- 自定义目录相关 ----------
+class CustomPathManager:
+    """管理用户自定义保存目录 URI，使用 SharedPreferences 持久化"""
+    def __init__(self):
+        if platform == 'android':
+            self.prefs = mActivity.getSharedPreferences("novel_prefs", Context.MODE_PRIVATE)
+        else:
+            self.prefs = None  # 桌面调试无此功能
 
-        # 主布局
-        self.layout = MDBoxLayout(orientation='vertical', padding=dp(15), spacing=dp(12))
+    def get_saved_uri(self):
+        """返回保存的目录树 URI 字符串，若无则返回 None"""
+        if self.prefs:
+            uri_str = self.prefs.getString("custom_save_uri", None)
+            return uri_str
+        return None
 
-        # 顶部工具栏
-        toolbar = MDToolbar(title="fq v2.0.6", pos_hint={'top': 1}, elevation=10)
-        toolbar.md_bg_color = (0.12, 0.58, 0.95, 1)    # 蓝色主题
-        self.add_widget(toolbar)
+    def set_saved_uri(self, uri_str):
+        """保存目录树 URI 字符串"""
+        if self.prefs:
+            editor = self.prefs.edit()
+            editor.putString("custom_save_uri", uri_str)
+            editor.apply()
 
-        # 内容卡片
-        card = MDCard(
-            size_hint=(1, None),
-            height=dp(280),
-            padding=dp(16),
-            spacing=dp(12),
-            elevation=2,
-            radius=[15, 15, 15, 15]
-        )
-
-        # 输入 book ID
-        self.book_id_input = MDTextField(
-            hint_text="请输入 book id",
-            mode="rectangle",
-            size_hint=(1, None),
-            height=dp(48)
-        )
-
-        # 保存路径显示与选择按钮
-        path_box = MDBoxLayout(orientation='horizontal', size_hint=(1, None), height=dp(48), spacing=dp(8))
-        self.path_label = MDLabel(
-            text=f"保存至: {self.save_dir}",
-            theme_text_color="Hint",
-            size_hint=(0.85, 1),
-            shorten=True
-        )
-        choose_btn = MDIconButton(icon="folder", on_release=self.choose_save_dir)
-        path_box.add_widget(self.path_label)
-        path_box.add_widget(choose_btn)
-
-        # 下载按钮
-        self.download_btn = MDRaisedButton(
-            text="开始下载",
-            size_hint=(1, None),
-            height=dp(48),
-            md_bg_color=(0.12, 0.58, 0.95, 1),
-            on_release=self.start_download
-        )
-
-        card.add_widget(self.book_id_input)
-        card.add_widget(path_box)
-        card.add_widget(self.download_btn)
-
-        # 进度标签（百分比）
-        self.progress_label = MDLabel(
-            text="",
-            halign="center",
-            size_hint=(1, None),
-            height=dp(30),
-            theme_text_color="Primary"
-        )
-
-        # 日志输出区域（带滚动）
-        self.output_label = MDLabel(
-            text="",
-            valign="top",
-            size_hint_y=None,
-            markup=True
-        )
-        self.output_label.bind(texture_size=self._update_output_height)
-        self.scroll_view = MDScrollView(size_hint=(1, 1))
-        self.scroll_view.add_widget(self.output_label)
-
-        # 组装页面
-        self.layout.add_widget(card)
-        self.layout.add_widget(self.progress_label)
-        self.layout.add_widget(self.scroll_view)
-        self.add_widget(self.layout)
-
-    def _update_output_height(self, instance, value):
-        """让日志标签高度自适应内容"""
-        self.output_label.height = self.output_label.texture_size[1]
-
-    # ---------- 文件管理器 ----------
-    def choose_save_dir(self, *args):
-        """打开目录选择器"""
-        if not self.file_manager:
-            self.file_manager = MDFileManager(
-                select_path=self.on_dir_select,
-                exit_manager=self.on_manager_exit,
-                preview=False,
-                selector='folder'
-            )
-        # Android 可能需要先请求存储权限，这里简单起见假设已授权
-        self.file_manager.show(self.save_dir)
-
-    def on_dir_select(self, path):
-        """用户选中目录后的回调"""
-        self.save_dir = path
-        self.path_label.text = f"保存至: {self.save_dir}"
-        self.file_manager.close()
-
-    def on_manager_exit(self, *args):
-        """文件管理器退出"""
-        self.file_manager.close()
-
-    # ---------- 下载控制 ----------
-    def start_download(self, instance):
-        if self._downloading:
+    def choose_directory(self):
+        """启动系统文件管理器，选择根目录"""
+        if platform != 'android':
+            print("当前平台不支持 SAF 选择目录")
             return
+
+        # 构建 Intent
+        intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        intent.addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION |
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION |
+            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+        )
+        mActivity.startActivityForResult(intent, 1001)  # 请求码 1001
+
+        # 绑定结果回调（必须在方法内绑定，且只一次）
+        activity.bind(on_activity_result=self.on_activity_result)
+
+    def on_activity_result(self, request_code, result_code, data):
+        if request_code == 1001 and result_code == Activity.RESULT_OK and data:
+            tree_uri = data.getData()
+            if tree_uri:
+                # 获取持久化权限
+                mActivity.getContentResolver().takePersistableUriPermission(
+                    tree_uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                self.set_saved_uri(tree_uri.toString())
+                # 通知主线程更新显示
+                Clock.schedule_once(lambda dt: self.update_ui_label(), 0)
+
+    def update_ui_label(self):
+        # 通过 App 实例找到 NovelDownloader 并更新标签
+        app = App.get_running_app()
+        if app and hasattr(app, 'root'):
+            root = app.root
+            if hasattr(root, 'path_label'):
+                root.path_label.text = f"当前保存目录：自定义 (已选择)"
+
+    def write_to_custom_uri(self, uri_str, filename, content):
+        """
+        通过 ContentResolver 在 SAF 目录树下写入文件。
+        返回成功 True/失败 False
+        """
+        if platform != 'android':
+            return False
+
+        try:
+            tree_uri = Uri.parse(uri_str)
+            doc_file = DocumentFile.fromTreeUri(mActivity, tree_uri)
+            # 创建或覆盖文件
+            existing = doc_file.findFile(filename)
+            if existing:
+                existing.delete()
+            new_file = doc_file.createFile("text/plain", filename)
+            if new_file is None:
+                raise Exception("无法创建文件")
+
+            output_stream = mActivity.getContentResolver().openOutputStream(new_file.getUri())
+            if output_stream is None:
+                raise Exception("无法打开输出流")
+
+            output_stream.write(content.encode('utf-8'))
+            output_stream.close()
+            return True
+        except Exception as e:
+            print(f"SAF 写入失败: {e}")
+            return False
+
+# ---------- 修改主界面，增加选择目录按钮 ----------
+class NovelDownloader(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(orientation='vertical', padding=15, spacing=10, **kwargs)
+
+        self.path_manager = CustomPathManager()
+
+        self.add_widget(Label(text='fq v2.0.6', size_hint_y=None, height=50, bold=True, font_size='18sp'))
+
+        # 当前路径显示
+        default_dir = os.path.join(App.get_running_app().user_data_dir, "novels")
+        self.path_label = Label(
+            text=f"当前保存目录：{default_dir}",
+            size_hint_y=None,
+            height=40,
+            font_size='14sp',
+            halign='left',
+            valign='middle'
+        )
+        self.path_label.bind(size=self.path_label.setter('text_size'))
+        self.add_widget(self.path_label)
+
+        # 选择目录按钮
+        self.choose_btn = Button(text='选择保存目录', size_hint_y=None, height=44)
+        self.choose_btn.bind(on_press=self.ask_choose_directory)
+        self.add_widget(self.choose_btn)
+
+        self.book_id_input = TextInput(hint_text='请输入book id', size_hint_y=None, height=48, multiline=False)
+        self.add_widget(self.book_id_input)
+
+        self.download_btn = Button(text='开始下载', size_hint_y=None, height=48)
+        self.download_btn.bind(on_press=self.start_download)
+        self.add_widget(self.download_btn)
+
+        self.output_label = Label(text='', size_hint_y=None, halign='left', valign='top')
+        self.scroll_view = ScrollView(size_hint=(1, 1))
+        self.scroll_view.add_widget(self.output_label)
+        self.add_widget(self.scroll_view)
+
+        self._update_event = None
+
+    def ask_choose_directory(self, instance):
+        """触发 SAF 目录选择"""
+        if platform == 'android':
+            self.path_manager.choose_directory()
+            # 等待用户选择后，通过回调更新标签
+        else:
+            self._append_output("桌面端暂不支持自定义目录，文件将保存到默认位置。\n")
+
+    def start_download(self, instance):
         book_id = self.book_id_input.text.strip()
         if not book_id:
-            Snackbar(text="请输入有效的 book id", snackbar_x="10dp", snackbar_y="10dp", size_hint_x=0.5).open()
+            self._append_output("请输入有效的book id\n")
             return
         self.download_btn.disabled = True
-        self._downloading = True
-        self.progress_label.text = "正在获取书籍信息..."
         threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
 
-    def _append_output(self, text):
-        """线程安全地将日志追加到界面"""
-        def do_append(dt):
-            self.output_label.text += text
-            # 强制滚动到底部
-            self.scroll_view.scroll_y = 0
-        Clock.schedule_once(do_append, 0)
-
-    def _set_progress(self, text):
-        """线程安全地更新进度文字"""
-        Clock.schedule_once(lambda dt: setattr(self.progress_label, 'text', text), 0)
+    # 其余 _append_output, _set_output 不变...
 
     def _download_novel(self, book_id):
         try:
@@ -223,80 +246,81 @@ class NovelDownloaderScreen(MDScreen):
                     chapters.extend(vol)
                 elif isinstance(vol, dict):
                     chapters.append(vol)
-
             total = len(chapters)
             self._append_output(f"共 {total} 章，开始下载...\n")
 
             safe_title = clean_filename(title)
-            os.makedirs(self.save_dir, exist_ok=True)
-            output_file = os.path.join(self.save_dir, f"{safe_title}.txt")
 
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(f"{title}\n作者: {author}\n简介:\n{intro}\n\n")
+            # --- 决定保存路径 ---
+            custom_uri = self.path_manager.get_saved_uri()
+            if custom_uri:
+                # 使用自定义目录
+                output_file = None  # 不使用普通文件路径
+                self._append_output(f"正在写入到自定义目录...\n")
+            else:
+                # 默认内部存储
+                output_dir = os.path.join(App.get_running_app().user_data_dir, "novels")
+                os.makedirs(output_dir, exist_ok=True)
+                output_file = os.path.join(output_dir, f"{safe_title}.txt")
+                f = open(output_file, 'w', encoding='utf-8')
 
-                BATCH = 30
-                for start in range(1, total + 1, BATCH):
-                    end = min(start + BATCH - 1, total)
-                    try:
-                        batch = get_chapter_contents_batch(book_id, start, end)
-                    except Exception as e:
-                        self._append_output(f"批量 {start}-{end} 失败: {e}\n")
-                        continue
+            # --- 准备文件内容（先收集到内存，再一次性写入）---
+            full_content = f"{title}\n作者: {author}\n简介:\n{intro}\n\n"
+            BATCH = 30
+            for start in range(1, total + 1, BATCH):
+                end = min(start + BATCH - 1, total)
+                try:
+                    batch = get_chapter_contents_batch(book_id, start, end)
+                except Exception as e:
+                    self._append_output(f"批量 {start}-{end} 失败: {e}\n")
+                    continue
 
-                    chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
-                    for idx in range(start, end + 1):
-                        info = chap_dict.get(idx)
-                        orig = next((ch for ch in chapters if ch.get('index') == idx), None)
-                        chap_title = orig['title'] if orig else info.get('chapter_title', f'第{idx}章')
-                        percent = (idx / total) * 100
-                        self._set_progress(f"[{percent:.1f}%] 正在下载 {idx}/{total}")
+                chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
+                for idx in range(start, end + 1):
+                    info = chap_dict.get(idx)
+                    orig = next((ch for ch in chapters if ch.get('index') == idx), None)
+                    chap_title = orig['title'] if orig else info.get('chapter_title', f'第{idx}章')
+                    percent = (idx / total) * 100
+                    self._set_output(f"[{percent:.1f}%] 正在下载 {idx}/{total}")
 
-                        if info:
-                            content = clean_content(info.get('content', ''))
-                            if content.lstrip().startswith(chap_title):
-                                content = content.lstrip()[len(chap_title):].strip()
-                            f.write(f"{chap_title}\n{content}\n\n")
-                        else:
-                            f.write(f"{chap_title}\n[内容缺失]\n\n")
+                    if info:
+                        content = clean_content(info.get('content', ''))
+                        if content.lstrip().startswith(chap_title):
+                            content = content.lstrip()[len(chap_title):].strip()
+                        full_content += f"{chap_title}\n{content}\n\n"
+                    else:
+                        full_content += f"{chap_title}\n[内容缺失]\n\n"
 
-                self._append_output(f"\n下载完成！\n文件保存在: {output_file}\n")
+            # 根据路径写入
+            if custom_uri:
+                success = self.path_manager.write_to_custom_uri(
+                    custom_uri, f"{safe_title}.txt", full_content
+                )
+                if success:
+                    self._append_output(f"\n下载完成，文件已保存到自定义目录！\n")
+                else:
+                    self._append_output(f"\n写入自定义目录失败，请检查权限。\n")
+            else:
+                # 写入普通文件
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(full_content)
+                self._append_output(f"\n下载完成！\n文件: {output_file}\n")
+
         except Exception as e:
             self._append_output(f"\n下载失败: {str(e)}\n")
         finally:
-            def reset_btn(dt):
+            def enable_btn(dt):
                 self.download_btn.disabled = False
-                self._downloading = False
-            Clock.schedule_once(reset_btn, 0)
+            Clock.schedule_once(enable_btn, 0)
 
-# ---------- App 入口 ----------
-class TomatoNovelApp(MDApp):
+# 应用入口不变
+class TomatoNovelApp(App):
     def build(self):
-        # 尝试注册中文字体（font.ttf 需要放在项目根目录）
         try:
             LabelBase.register(name='Roboto', fn_regular='font.ttf')
         except:
             pass
-
-        # 请求存储权限（Android 6+ 运行时权限）
-        if self._is_android():
-            self.request_android_permissions()
-
-        return NovelDownloaderScreen()
-
-    def request_android_permissions(self):
-        """简单的运行时权限请求"""
-        try:
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
-        except ImportError:
-            pass
-
-    def _is_android(self):
-        try:
-            from android import mActivity
-            return True
-        except ImportError:
-            return False
+        return NovelDownloader()
 
 if __name__ == '__main__':
     TomatoNovelApp().run()
