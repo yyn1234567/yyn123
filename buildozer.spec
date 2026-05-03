@@ -1,6 +1,6 @@
 [app]
 title = 煲汤-Tb
-package.name = com yyn123.fq
+package.name = com.yyn123.fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
