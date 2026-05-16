@@ -1,12 +1,13 @@
 [app]
-title = 煲汤-Tb
-package.name = com.yyn123.fq
+title = s丶ky书包
+package.name = fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 2.0.6
+version = 1.1.0
 requirements = python3,kivy,requests,libiconv,libffi,pyjnius,android
 icon.filename = icon.png
+presplash.filename = presplash.png
 fullscreen = 0
 orientation = portrait
 entrypoint = main.py
