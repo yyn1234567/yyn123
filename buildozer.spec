@@ -4,40 +4,46 @@ package.name = com.yyn123.fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 2.0.5
-requirements = python3,kivy,requests,libiconv,libffi,androidstorage
+version = 2.0.6
+requirements = python3,kivy,requests,libiconv,libffi,pyjnius,android
 icon.filename = icon.png
-#presplash.filename = presplash.png
 fullscreen = 0
 orientation = portrait
 entrypoint = main.py
 
-#这些不要改 Don't change these
+# Don't change these
 android.accept_sdk_license = True
 android.allow_api_min = 21
-android.api = 33
+android.api = 35
 android.minapi = 21
 android.ndk = 25b
 exclude_patterns = **/test/*, **/tests/*
 android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
 android.gradle_plugin = 7.4.2
-android.sdk = 33
+android.sdk = 35
 android.ndk_api = 21
 p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
-android.permissions = INTERNET
 
-#以下为release模式需要 Following is required for release mode
+# Android permissions - Updated for Android 15 compatibility
+android.permissions = INTERNET,WAKE_LOCK,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,MANAGE_EXTERNAL_STORAGE
 
-#强制构建APK而不是AAB,但没用 Why does it build .aab instead of .apk?
-#android.aab = False
+# Android 11+ scoped storage compatibility
+android.add_src = android/src/main/java/com/yyn123/fq/FileProvider.java
 
-#签名配置 signature configuration
+# Following is required for release mode
+android.aab = False
+
+# Signature configuration (uncomment and configure for release builds)
 #android.keystore = /home/runner/work/yyn123/AndAgain/com.yyn123.fq.keystore
 #android.keystore_storepass = android
 #android.keystore_keypass = android
 #android.keystore_alias = com.yyn123.fq
+
+# Android manifest additions
+android.manifest_placeholders = [:]
+android.manifest = <manifest><uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/></manifest>
 
 [buildozer]
 log_level = 2

@@ -5,7 +5,6 @@ import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Kivy 导入
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
@@ -14,18 +13,8 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
 from kivy.core.text import LabelBase
+from kivy.utils import platform
 
-# 新增：用于获取 Android 公共目录
-try:
-    from androidstorage import primary_external_public_directory
-except ImportError:
-    # 防止在 PC 端运行时报错
-    def primary_external_public_directory(directory_type):
-        # 在 PC 上回退到用户文档目录
-        import tempfile
-        return tempfile.gettempdir()
-
-# 常量定义
 BASE_URL = "https://oiapi.net/api/FqRead"
 API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
 MAX_RETRIES = 3
@@ -72,24 +61,63 @@ def clean_content(content):
     content = re.sub(r'\n+', '\n', content).strip()
     return content
 
+def get_download_dir():
+    """获取系统Download/novels目录，兼容不同Android版本"""
+    try:
+        if platform == 'android':
+            # 尝试使用pyjnius访问Environment类
+            from jnius import autoclass
+            Environment = autoclass('android.os.Environment')
+            
+            # 检查存储权限
+            from android.permissions import check_permission, Permission
+            
+            # 获取外部存储路径
+            if Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED:
+                external_storage = Environment.getExternalStorageDirectory().getAbsolutePath()
+                download_dir = os.path.join(external_storage, 'Download', 'novels')
+                
+                # 确保目录可写
+                test_file = os.path.join(download_dir, '.test')
+                try:
+                    os.makedirs(download_dir, exist_ok=True)
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    return download_dir
+                except:
+                    pass
+            
+            # 如果无法访问外部存储，返回应用私有目录下的novels文件夹
+            return os.path.join(App.get_running_app().user_data_dir, 'novels')
+        else:
+            # 桌面端使用用户主目录的Downloads文件夹
+            downloads = os.path.join(os.path.expanduser('~'), 'Downloads')
+            return os.path.join(downloads, 'novels')
+    except Exception as e:
+        # 出错时回退到应用私有目录
+        try:
+            return os.path.join(App.get_running_app().user_data_dir, 'novels')
+        except:
+            return os.path.join(os.getcwd(), 'novels')
+
 class NovelDownloader(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation='vertical', padding=15, spacing=10, **kwargs)
-        
+
         self.add_widget(Label(text='fq v2.0.5', size_hint_y=None, height=50, bold=True, font_size='18sp'))
-        
         self.book_id_input = TextInput(hint_text='请输入book id', size_hint_y=None, height=48, multiline=False)
         self.add_widget(self.book_id_input)
-        
+
         self.download_btn = Button(text='开始下载', size_hint_y=None, height=48)
         self.download_btn.bind(on_press=self.start_download)
         self.add_widget(self.download_btn)
-        
-        self.output_label = Label(text='', size_hint_y=None, halign='left', valign='top', markup=True)
+
+        self.output_label = Label(text='', size_hint_y=None, halign='left', valign='top')
         self.scroll_view = ScrollView(size_hint=(1, 1))
         self.scroll_view.add_widget(self.output_label)
         self.add_widget(self.scroll_view)
-        
+
         self._update_event = None
 
     def start_download(self, instance):
@@ -97,7 +125,6 @@ class NovelDownloader(BoxLayout):
         if not book_id:
             self._append_output("请输入有效的book id\n")
             return
-            
         self.download_btn.disabled = True
         self._append_output("正在获取书籍信息...\n")
         threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
@@ -130,58 +157,49 @@ class NovelDownloader(BoxLayout):
                     chapters.extend(vol)
                 elif isinstance(vol, dict):
                     chapters.append(vol)
+
             total = len(chapters)
             self._append_output(f"共 {total} 章，开始下载...\n")
 
             safe_title = clean_filename(title)
             
-            # --- 核心修改点：获取 Android 公共 Downloads 目录 ---
-            # 获取系统 Download 目录
-            download_dir = primary_external_public_directory("Download")
-            # 在 Download 目录下创建 novels 子目录
-            output_dir = os.path.join(download_dir, "novels")
-            
-            # 确保目录存在
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-            
+            # 使用新的下载路径函数
+            output_dir = get_download_dir()
+            os.makedirs(output_dir, exist_ok=True)
             output_file = os.path.join(output_dir, f"{safe_title}.txt")
-            
-            # 提示用户保存路径
-            self._append_output(f"保存路径: {output_file}\n")
+
+            # 显示实际保存路径
+            self._append_output(f"保存路径: {output_dir}\n")
 
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"{title}\n作者: {author}\n简介:\n{intro}\n\n")
-                
-            BATCH = 30
-            for start in range(1, total + 1, BATCH):
-                end = min(start + BATCH - 1, total)
-                try:
-                    batch = get_chapter_contents_batch(book_id, start, end)
-                except Exception as e:
-                    self._append_output(f"批量 {start}-{end} 失败: {e}\n")
-                    continue
-                    
-                chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
-                for idx in range(start, end + 1):
-                    info = chap_dict.get(idx)
-                    orig = next((ch for ch in chapters if ch.get('index') == idx), None)
-                    chap_title = orig['title'] if orig else info.get('chapter_title', f'第{idx}章')
-                    percent = (idx / total) * 100
-                    self._set_output(f"[{percent:.1f}%] 正在下载 {idx}/{total}")
-                    
-                    if info:
-                        content = clean_content(info.get('content', ''))
-                        if content.lstrip().startswith(chap_title):
-                            content = content.lstrip()[len(chap_title):].strip()
-                        with open(output_file, 'a', encoding='utf-8') as f:
+
+                BATCH = 30
+                for start in range(1, total + 1, BATCH):
+                    end = min(start + BATCH - 1, total)
+                    try:
+                        batch = get_chapter_contents_batch(book_id, start, end)
+                    except Exception as e:
+                        self._append_output(f"批量 {start}-{end} 失败: {e}\n")
+                        continue
+
+                    chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
+                    for idx in range(start, end + 1):
+                        info = chap_dict.get(idx)
+                        orig = next((ch for ch in chapters if ch.get('index') == idx), None)
+                        chap_title = orig['title'] if orig else info.get('chapter_title', f'第{idx}章')
+                        percent = (idx / total) * 100
+                        self._set_output(f"[{percent:.1f}%] 正在下载 {idx}/{total}")
+
+                        if info:
+                            content = clean_content(info.get('content', ''))
+                            if content.lstrip().startswith(chap_title):
+                                content = content.lstrip()[len(chap_title):].strip()
                             f.write(f"{chap_title}\n{content}\n\n")
-                    else:
-                        with open(output_file, 'a', encoding='utf-8') as f:
+                        else:
                             f.write(f"{chap_title}\n[内容缺失]\n\n")
-                            
-            self._append_output(f"\n下载完成！\n文件已保存至系统 Download/novels 目录。\n")
-            
+
+                self._append_output(f"\n下载完成！\n文件: {output_file}\n")
         except Exception as e:
             self._append_output(f"\n下载失败: {str(e)}\n")
         finally:
@@ -195,7 +213,33 @@ class TomatoNovelApp(App):
         try:
             LabelBase.register(name='Roboto', fn_regular='font.ttf')
         except:
-            pass # 如果字体文件不存在，使用默认（仍会乱码），但至少不崩溃
+            pass  # 如果字体文件不存在，使用默认（仍会乱码），但至少不崩溃
+        
+        # Android平台请求权限
+        if platform == 'android':
+            try:
+                from android.permissions import request_permissions, Permission
+                
+                # 请求存储权限，兼容Android 15
+                permissions_needed = [
+                    Permission.WRITE_EXTERNAL_STORAGE,
+                    Permission.READ_EXTERNAL_STORAGE
+                ]
+                
+                # Android 13+ 需要新的媒体权限
+                try:
+                    permissions_needed.extend([
+                        Permission.READ_MEDIA_IMAGES,
+                        Permission.READ_MEDIA_VIDEO,
+                        Permission.READ_MEDIA_AUDIO
+                    ])
+                except:
+                    pass
+                
+                request_permissions(permissions_needed)
+            except Exception as e:
+                print(f"权限请求失败: {e}")
+        
         return NovelDownloader()
 
 if __name__ == '__main__':
