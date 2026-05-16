@@ -4,8 +4,8 @@ package.name = com.yyn123.fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 2.0.6
-requirements = python3,kivy,requests,libiconv,libffi,android
+version = 2.0.5
+requirements = python3,kivy,requests,libiconv,libffi,androidstorage
 icon.filename = icon.png
 #presplash.filename = presplash.png
 fullscreen = 0
@@ -15,19 +15,18 @@ entrypoint = main.py
 #这些不要改 Don't change these
 android.accept_sdk_license = True
 android.allow_api_min = 21
-android.api = 29
+android.api = 33
 android.minapi = 21
 android.ndk = 25b
 exclude_patterns = **/test/*, **/tests/*
 android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
 android.gradle_plugin = 7.4.2
-android.sdk = 29
+android.sdk = 33
 android.ndk_api = 21
-android.manifest.request_legacy_external_storage = True
 p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
-android.permissions = INTERNET, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
+android.permissions = INTERNET
 
 #以下为release模式需要 Following is required for release mode
 
