@@ -153,7 +153,7 @@ class ModernTextInput(TextInput):
         self.font_size = '15sp'
         
         with self.canvas.before:
-            Color(rgba=(0.6, 0.8, 0.85, 0.8))
+            self.border_color = Color(rgba=(0.6, 0.8, 0.85, 0.8))
             self.border = Line(rectangle=(self.x, self.y, self.width, self.height), width=1.5)
         self.bind(pos=self.update_border, size=self.update_border, focus=self.on_focus)
     
@@ -162,9 +162,9 @@ class ModernTextInput(TextInput):
     
     def on_focus(self, instance, value):
         if value:
-            self.border.rgba = (0.15, 0.5, 0.6, 1)
+            self.border_color.rgba = (0.15, 0.5, 0.6, 1)
         else:
-            self.border.rgba = (0.6, 0.8, 0.85, 0.8)
+            self.border_color.rgba = (0.6, 0.8, 0.85, 0.8)
 
 
 class ModernButton(Button):
@@ -262,7 +262,7 @@ class NovelDownloader(GradientBoxLayout):
         self.add_widget(header_layout)
         
         self.title_label = Label(
-            text='fq v1.2.0',
+            text='fq v1.2.1',
             size_hint=(1, None),
             height=40,
             bold=True,
