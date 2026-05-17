@@ -128,7 +128,7 @@ class CardBox(BoxLayout):
             Color(rgba=(0.97, 0.98, 1.0, 1))
             self.bg_rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[15, 15, 15, 15])
             Color(rgba=(0.1, 0.15, 0.2, 0.1))
-            self.shadow = RoundedRectangle(pos=self.x-4, self.y-4, size=self.size, radius=[15, 15, 15, 15])
+            self.shadow = RoundedRectangle(pos=(self.x-4, self.y-4), size=self.size, radius=[15, 15, 15, 15])
         self.bind(pos=self.update_rect, size=self.update_rect)
     
     def update_rect(self, *args):
