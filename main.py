@@ -139,7 +139,6 @@ class CardBox(BoxLayout):
 
 
 class ModernTextInput(TextInput):
-    """现代化输入框"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.background_color = (0.94, 0.96, 0.98, 1)
@@ -151,20 +150,21 @@ class ModernTextInput(TextInput):
         self.size_hint = (1, None)
         self.height = 50
         self.font_size = '15sp'
-        
+
         with self.canvas.before:
-            self.border_color = Color(rgba=(0.6, 0.8, 0.85, 0.8))
-            self.border = Line(rectangle=(self.x, self.y, self.width, self.height), width=1.5)
-        self.bind(pos=self.update_border, size=self.update_border, focus=self.on_focus)
-    
-    def update_border(self, *args):
-        self.border.rectangle = (self.x, self.y, self.width, self.height)
-    
-    def on_focus(self, instance, value):
+            self._border_color = Color(rgba=(0.6, 0.8, 0.85, 0.8))
+            self._border_line = Line(rectangle=(self.x, self.y, self.width, self.height), width=1.5)
+
+        self.bind(pos=self._update_border, size=self._update_border, focus=self._on_focus)
+
+    def _update_border(self, *args):
+        self._border_line.rectangle = (self.x, self.y, self.width, self.height)
+
+    def _on_focus(self, instance, value):
         if value:
-            self.border_color.rgba = (0.15, 0.5, 0.6, 1)
+            self._border_color.rgba = (0.15, 0.5, 0.6, 1)
         else:
-            self.border_color.rgba = (0.6, 0.8, 0.85, 0.8)
+            self._border_color.rgba = (0.6, 0.8, 0.85, 0.8)
 
 
 class ModernButton(Button):
