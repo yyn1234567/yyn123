@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import json, os, time, re, threading
+
+import json
+import os
+import time
+import re
+import threading
 import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.scrollview import ScrollView
+# --- KivyMD 导入 ---
+from kivymd.app import MDApp
+from kivymd.uix.screen import MDScreen
+from kivymd.uix.textfield import MDTextField
+from kivymd.uix.button import MDRaisedButton
+from kivymd.uix.label import MDLabel
+from kivymd.uix.snackbar import Snackbar
+from kivymd.uix.progressbar import MDProgressBar
 from kivy.clock import Clock
-from kivy.core.text import LabelBase
+from kivy.core.clipboard import Clipboard
 from kivy.utils import platform
+from kivy.lang import Builder
 
+# --- 原有业务逻辑保持不变 ---
 BASE_URL = "https://oiapi.net/api/FqRead"
 API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
 MAX_RETRIES = 3
@@ -65,90 +74,143 @@ def get_download_dir():
     """获取系统Download/novels目录，兼容不同Android版本"""
     try:
         if platform == 'android':
-            # 尝试使用pyjnius访问Environment类
             from jnius import autoclass
             Environment = autoclass('android.os.Environment')
-            
-            # 检查存储权限
-            from android.permissions import check_permission, Permission
-            
-            # 获取外部存储路径
             if Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED:
                 external_storage = Environment.getExternalStorageDirectory().getAbsolutePath()
                 download_dir = os.path.join(external_storage, 'Download', 'novels')
-                
-                # 确保目录可写
-                test_file = os.path.join(download_dir, '.test')
                 try:
                     os.makedirs(download_dir, exist_ok=True)
+                    test_file = os.path.join(download_dir, '.test')
                     with open(test_file, 'w') as f:
                         f.write('test')
                     os.remove(test_file)
                     return download_dir
                 except:
                     pass
-            
-            # 如果无法访问外部存储，返回应用私有目录下的novels文件夹
-            return os.path.join(App.get_running_app().user_data_dir, 'novels')
+            return os.path.join(MDApp.get_running_app().user_data_dir, 'novels')
         else:
-            # 桌面端使用用户主目录的Downloads文件夹
             downloads = os.path.join(os.path.expanduser('~'), 'Downloads')
             return os.path.join(downloads, 'novels')
     except Exception as e:
-        # 出错时回退到应用私有目录
         try:
-            return os.path.join(App.get_running_app().user_data_dir, 'novels')
+            return os.path.join(MDApp.get_running_app().user_data_dir, 'novels')
         except:
             return os.path.join(os.getcwd(), 'novels')
 
-class NovelDownloader(BoxLayout):
+# --- KivyMD UI 代码 ---
+KV = '''
+MDScreen:
+    name: "main"
+    md_bg_color: self.theme_cls.backgroundColor
+
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "20dp"
+        spacing: "15dp"
+
+        MDLabel:
+            text: "fq v1.2.2"
+            halign: "center"
+            font_style: "DisplayLarge"
+            theme_text_color: "Primary"
+            size_hint_y: None
+            height: "60dp"
+
+        MDLabel:
+            text: "请输入book id"
+            halign: "center"
+            theme_text_color: "Hint"
+            size_hint_y: None
+            height: "20dp"
+
+        MDTextField:
+            id: book_id_input
+            hint_text: "book id"
+            helper_text: "获取方法另见视频"
+            helper_text_mode: "on_focus"
+            mode: "rectangle"
+            on_text_validate: app.root.start_download()
+
+        MDRaisedButton:
+            text: "开始下载"
+            on_press: app.root.start_download()
+            pos_hint: {"center_x": 0.5}
+            size_hint_x: 0.8
+
+        MDLabel:
+            text: "状态"
+            halign: "left"
+            font_style: "LabelLarge"
+            padding: [0, "10dp", 0, 0]
+
+        MDSeparator:
+
+        ScrollView:
+            MDBoxLayout:
+                id: output_box
+                orientation: "vertical"
+                adaptive_height: True
+                padding: "10dp"
+                spacing: "5dp"
+
+        MDProgressBar:
+            id: progress_bar
+            determinate: False
+            opacity: 0
+            size_hint_y: None
+            height: "10dp"
+'''
+
+class NovelDownloader(MDScreen):
     def __init__(self, **kwargs):
-        super().__init__(orientation='vertical', padding=15, spacing=10, **kwargs)
+        super().__init__(**kwargs)
+        self.output_box = self.ids.output_box
+        self.progress_bar = self.ids.progress_bar
+        self.book_id_input = self.ids.book_id_input
 
-        self.add_widget(Label(text='fq v1.1.0', size_hint_y=None, height=50, bold=True, font_size='18sp'))
-        self.book_id_input = TextInput(hint_text='请输入book id', size_hint_y=None, height=48, multiline=False)
-        self.add_widget(self.book_id_input)
+    def _add_log(self, text, color="primary"):
+        label = MDLabel(
+            text=text,
+            theme_text_color="Custom",
+            text_color=getattr(self.theme_cls, f"{color}Color"),
+            size_hint_y=None,
+            height="30dp",
+            markup=True
+        )
+        self.output_box.add_widget(label)
+        # 自动滚动到底部
+        Clock.schedule_once(lambda dt: setattr(self.children[0], 'scroll_y', 0), 0.1)
 
-        self.download_btn = Button(text='开始下载', size_hint_y=None, height=48)
-        self.download_btn.bind(on_press=self.start_download)
-        self.add_widget(self.download_btn)
+    def _clear_logs(self):
+        self.output_box.clear_widgets()
 
-        self.output_label = Label(text='', size_hint_y=None, halign='left', valign='top')
-        self.scroll_view = ScrollView(size_hint=(1, 1))
-        self.scroll_view.add_widget(self.output_label)
-        self.add_widget(self.scroll_view)
-
-        self._update_event = None
-
-    def start_download(self, instance):
+    def start_download(self, *args):
         book_id = self.book_id_input.text.strip()
         if not book_id:
-            self._append_output("请输入有效的book id\n")
+            self._show_error("请输入有效的book id")
             return
-        self.download_btn.disabled = True
-        self._append_output("正在获取书籍信息...\n")
-        threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
 
-    def _append_output(self, text):
-        def _update(dt):
-            self.output_label.text += text
-            self.output_label.texture_update()
-            self.output_label.height = self.output_label.texture_size[1]
-            self.scroll_view.scroll_y = 0
-        Clock.schedule_once(_update, 0)
+        self._clear_logs()
+        self._add_log("正在获取书籍信息...", "secondary")
+        self.progress_bar.opacity = 1
+        
+        # 禁用按钮防止重复点击
+        btn = self.children[1]
+        btn.disabled = True
+        
+        threading.Thread(target=self._download_novel, args=(book_id, btn), daemon=True).start()
 
-    def _set_output(self, text):
-        def _update(dt):
-            self.output_label.text = text
-        Clock.schedule_once(_update, 0)
-
-    def _download_novel(self, book_id):
+    def _download_novel(self, book_id, button):
         try:
             info = get_book_info(book_id)
             title = info['title']
             author = info['author']
             intro = info.get('docs', '').replace('\n', ' ')
-            self._append_output(f"书名: {title}\n作者: {author}\n简介: {intro[:100]}...\n")
+            
+            Clock.schedule_once(lambda dt: self._add_log(f"书名: {title}", "primary"))
+            Clock.schedule_once(lambda dt: self._add_log(f"作者: {author}", "primary"))
+            Clock.schedule_once(lambda dt: self._add_log(f"简介: {intro[:50]}...", "hint"))
 
             chapters_data = get_chapter_list(book_id)
             chapters = []
@@ -157,40 +219,35 @@ class NovelDownloader(BoxLayout):
                     chapters.extend(vol)
                 elif isinstance(vol, dict):
                     chapters.append(vol)
-
             total = len(chapters)
-            self._append_output(f"共 {total} 章，开始下载...\n")
+            Clock.schedule_once(lambda dt: self._add_log(f"共 {total} 章，开始下载...", "secondary"))
 
             safe_title = clean_filename(title)
-            
-            # 使用新的下载路径函数
             output_dir = get_download_dir()
             os.makedirs(output_dir, exist_ok=True)
             output_file = os.path.join(output_dir, f"{safe_title}.txt")
+            
+            Clock.schedule_once(lambda dt: self._add_log(f"保存路径: {output_dir}", "success"))
 
-            # 显示实际保存路径
-            self._append_output(f"保存路径: {output_dir}\n")
-
+            BATCH = 30
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"{title}\n作者: {author}\n简介:\n{intro}\n\n")
-
-                BATCH = 30
+                
                 for start in range(1, total + 1, BATCH):
                     end = min(start + BATCH - 1, total)
                     try:
                         batch = get_chapter_contents_batch(book_id, start, end)
                     except Exception as e:
-                        self._append_output(f"批量 {start}-{end} 失败: {e}\n")
+                        Clock.schedule_once(lambda dt, e=e: self._add_log(f"批量 {start}-{end} 失败: {e}", "error"))
                         continue
-
+                    
                     chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
+                    
                     for idx in range(start, end + 1):
                         info = chap_dict.get(idx)
                         orig = next((ch for ch in chapters if ch.get('index') == idx), None)
                         chap_title = orig['title'] if orig else info.get('chapter_title', f'第{idx}章')
-                        percent = (idx / total) * 100
-                        self._set_output(f"[{percent:.1f}%] 正在下载 {idx}/{total}")
-
+                        
                         if info:
                             content = clean_content(info.get('content', ''))
                             if content.lstrip().startswith(chap_title):
@@ -198,35 +255,41 @@ class NovelDownloader(BoxLayout):
                             f.write(f"{chap_title}\n{content}\n\n")
                         else:
                             f.write(f"{chap_title}\n[内容缺失]\n\n")
+                            
+                        # 更新进度
+                        percent = (idx / total) * 100
+                        Clock.schedule_once(lambda dt, p=percent: self._add_log(f"[{p:.1f}%] 下载完成: {idx}/{total}", "primary"))
 
-                self._append_output(f"\n下载完成！\n文件: {output_file}\n")
+            Clock.schedule_once(lambda dt: self._add_log(f"下载成功！文件已保存。", "success"))
+            
         except Exception as e:
-            self._append_output(f"\n下载失败: {str(e)}\n")
+            Clock.schedule_once(lambda dt: self._show_error(f"下载失败: {str(e)}"))
         finally:
-            def enable_btn(dt):
-                self.download_btn.disabled = False
-            Clock.schedule_once(enable_btn, 0)
+            Clock.schedule_once(lambda dt: setattr(self.progress_bar, 'opacity', 0))
+            Clock.schedule_once(lambda dt: setattr(button, 'disabled', False))
 
-class TomatoNovelApp(App):
+    def _show_error(self, message):
+        snackbar = Snackbar(
+            text=message,
+            duration=3,
+            snackbar_x="10dp",
+            snackbar_y="10dp",
+        )
+        snackbar.open()
+
+class TomatoNovelApp(MDApp):
     def build(self):
-        # 注册中文字体（确保 font.ttf 存在）
-        try:
-            LabelBase.register(name='Roboto', fn_regular='font.ttf')
-        except:
-            pass  # 如果字体文件不存在，使用默认（仍会乱码），但至少不崩溃
+        self.theme_cls.theme_style = "Dark"  # 可选 "Light"
+        self.theme_cls.primary_palette = "BlueGray" # 更柔和的配色
         
-        # Android平台请求权限
+        # Android 权限请求
         if platform == 'android':
             try:
                 from android.permissions import request_permissions, Permission
-                
-                # 请求存储权限，兼容Android 15
                 permissions_needed = [
                     Permission.WRITE_EXTERNAL_STORAGE,
                     Permission.READ_EXTERNAL_STORAGE
                 ]
-                
-                # Android 13+ 需要新的媒体权限
                 try:
                     permissions_needed.extend([
                         Permission.READ_MEDIA_IMAGES,
@@ -235,12 +298,11 @@ class TomatoNovelApp(App):
                     ])
                 except:
                     pass
-                
                 request_permissions(permissions_needed)
             except Exception as e:
                 print(f"权限请求失败: {e}")
         
-        return NovelDownloader()
+        return Builder.load_string(KV)
 
 if __name__ == '__main__':
     TomatoNovelApp().run()
