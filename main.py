@@ -175,7 +175,7 @@ class NovelDownloaderApp(App):
             height=48
         )
         title_label = Label(
-            text="[b]s丶ky书包[/b]  v2.1.2",
+            text="[b]s丶ky书包[/b]  v1.2.2",
             markup=True,
             font_size=20,
             color=(1, 0.85, 0.4, 1),  # 金色

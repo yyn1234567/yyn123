@@ -19,7 +19,7 @@ source.include_exts = py,png,jpg,kv,atlas,ttf
 source.exclude_exts = spec
 
 # (str) 应用版本号
-version = 2.1.2
+version = 1.2.2
 
 # (str) 应用版本名
 version.regex = __version__ = ['"](.*)['"]
