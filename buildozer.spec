@@ -4,8 +4,8 @@ package.name = fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 1.2.2
-requirements = python3,kivy==2.3.0,kivymd==1.2.0,requests,libiconv,libffi,pyjnius,android
+version = 1.2.0
+requirements = python3,kivy,requests,libiconv,libffi,pyjnius,android
 icon.filename = icon.png
 presplash.filename = presplash.png
 fullscreen = 0
