@@ -1,4 +1,4 @@
-name: Build Kivy Android APK In Debug Mode
+name: Build APK
 
 on:
   workflow_dispatch:
@@ -34,54 +34,82 @@ jobs:
       with:
         python-version: '3.9'
 
+    # ========== 缓存层 ==========
+    # 缓存1: pip 包 (命中率高)
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          pip-${{ runner.os }}-
+
+    # 缓存2: Buildozer 全局目录 (SDK/NDK ~2-3GB，收益最大)
+    - name: Cache Buildozer (SDK/NDK)
+      uses: actions/cache@v4
+      with:
+        path: ~/.buildozer
+        key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          buildozer-${{ runner.os }}-
+
+    # 缓存3: Gradle 缓存 (~500MB)
+    - name: Cache Gradle
+      uses: actions/cache@v4
+      with:
+        path: ~/.gradle
+        key: gradle-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          gradle-${{ runner.os }}-
+    # ========== 缓存层结束 ==========
+
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq \
             git zip unzip \
             python3-pip autoconf automake libtool \
             pkg-config zlib1g-dev libncurses5-dev \
             libncursesw5-dev cmake libffi-dev libssl-dev \
-            curl unzip openjdk-17-jdk libltdl-dev
+            curl openjdk-17-jdk libltdl-dev
 
     - name: Install Buildozer and dependencies
       run: |
         python -m pip install --upgrade pip
-        #下载依赖库 add your requirements
-        pip install buildozer cython==0.29.33 kivy==2.3.0 kivymd==1.2.0
-        #何意味 You will need it
+        # 只安装必要依赖（移除 kivymd）
+        pip install buildozer cython==0.29.33 kivy
         pip install python-for-android
 
     - name: Build APK with Buildozer
       run: |
         export PATH="$HOME/.local/bin:$PATH"
-        echo "Let's have a check:"
+        echo "=== 环境检查 ==="
         java -version
         python --version
         buildozer --version
         
-        #设置环境变量解决网络问题 set environment variables to solve network problems
         export BUILDODER_ALLOW_PLATFORM_EXEC=1
         export USE_COLORS=0
         
-        #开始构筑 start building
-        #buildozer -v android clean 2>&1 | tee clean.log
-        #buildozer -v android update 2>&1 | tee update.log
+        echo "=== 开始构建 (debug) ==="
+        # 注意: 如果 buildozer.spec 有变化，取消下面注释来清理
+        buildozer -v android clean 2>&1 | tee clean.log
         buildozer -v android debug 2>&1 | tee buildozer.log
         
-        #查找所有APK文件并复制到bin目录 find all APK files and copy them to the bin directory
-        find . -name "*.apk" -exec cp {} ./ \; 2>/dev/null || true
+        echo "=== 收集APK ==="
+        mkdir -p bin
+        find . -name "*.apk" -exec cp {} ./bin/ \; 2>/dev/null || true
 
     - name: Check if APK was built
       id: check-build
       run: |
-        if ls *.apk 1> /dev/null 2>&1; then
+        if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "BUILD_FINAL_SUCCESS=true" >> $GITHUB_OUTPUT
           echo "Found APK files:"
-          ls -la *.apk
+          ls -lh bin/*.apk
         else
           echo "BUILD_FINAL_SUCCESS=false" >> $GITHUB_OUTPUT
-          echo "Didn't found APK files."
+          echo "No APK files found."
         fi
 
     - name: Upload APK artifact
@@ -99,6 +127,4 @@ jobs:
         name: build-logs
         path: |
           buildozer.log
-          #clean.log
-          #update.log
         retention-days: 7
