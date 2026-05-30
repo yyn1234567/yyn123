@@ -1,129 +1,81 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-s丶ky书包 v1.2.1
+s丶ky书包
 """
-import json, os, time, re, threading
-import requests
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+import json
+import urllib.request
+import urllib.error
+import os
+import re
+import time
+import threading
+
+# ── Kivy 导入 ──────────────────────────────────────────
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.scrollview import ScrollView
 from kivy.uix.progressbar import ProgressBar
-from kivy.clock import Clock
-from kivy.core.text import LabelBase
-from kivy.utils import platform, get_color_from_hex
-from kivy.graphics import Color, Rectangle
+from kivy.uix.popup import Popup
+from kivy.clock import Clock, mainthread
+from kivy.core.window import Window
+from kivy.properties import StringProperty, NumericProperty, BooleanProperty
 
-# ===================== 常量 =====================
+# ── 跨平台存储路径 ─────────────────────────────────────
+try:
+    from android.storage import primary_external_storage_path
+    _ANDROID = True
+except ImportError:
+    _ANDROID = False
+
+try:
+    from android.permissions import request_permissions, Permission, check_permission
+    _ANDROID_PERM = True
+except ImportError:
+    _ANDROID_PERM = False
+
+
+# ═══════════════════════════════════════════════════════════
+#  API 配置（与原脚本一致）
+# ═══════════════════════════════════════════════════════════
 BASE_URL = "https://oiapi.net/api/FqRead"
 API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 TIMEOUT = 30
-SETTINGS_FILE = "novel_settings.json"
+BATCH_SIZE = 30
 
-# ===================== 配色主题 =====================
-COLORS = {
-    'bg':          (0.13, 0.13, 0.15, 1),    # 深色背景
-    'surface':     (0.18, 0.18, 0.20, 1),    # 卡片/输入框背景
-    'primary':     (0.35, 0.55, 0.75, 1),    # 主色调（柔和蓝）
-    'primary_dim': (0.25, 0.40, 0.55, 1),    # 按钮按下态
-    'accent':      (0.90, 0.55, 0.30, 1),    # 强调色（暖橙）
-    'text_primary':(0.92, 0.92, 0.92, 1),    # 主文字
-    'text_secondary':(0.60, 0.60, 0.65, 1),  # 次要文字
-    'success':     (0.30, 0.75, 0.45, 1),    # 成功绿
-    'error':       (0.85, 0.30, 0.30, 1),    # 错误红
-    'divider':     (0.25, 0.25, 0.28, 1),    # 分割线
-}
 
-# ===================== 字体查找（不打包字体！）=====================
-def _find_system_chinese_font():
-    """按平台查找系统中文字体，找不到则回退默认"""
-    if platform == 'android':
-        candidates = [
-            '/system/fonts/NotoSansCJK-Regular.ttc',
-            '/system/fonts/DroidSansFallback.ttf',
-            '/system/fonts/NotoSansSC-Regular.otf',
-            '/system/fonts/FallbackFont.ttf',
-        ]
-    elif platform == 'linux':
-        candidates = [
-            '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
-            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
-        ]
-    elif platform == 'macosx':
-        candidates = [
-            '/System/Library/Fonts/PingFang.ttc',
-            '/System/Library/Fonts/STHeiti Light.ttc',
-            '/Library/Fonts/Arial Unicode.ttf',
-        ]
-    elif platform == 'win':
-        candidates = [
-            'C:/Windows/Fonts/msyh.ttc',
-            'C:/Windows/Fonts/msyhbd.ttc',
-            'C:/Windows/Fonts/simsun.ttc',
-        ]
-    else:
-        candidates = []
-
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
-
-# ===================== 配置管理 =====================
-def get_settings_dir():
-    """获取设置文件存储目录"""
-    try:
-        return App.get_running_app().user_data_dir
-    except Exception:
-        return os.getcwd()
-
-def load_settings():
-    """加载设置（记住上次book_id等）"""
-    path = os.path.join(get_settings_dir(), SETTINGS_FILE)
-    try:
-        if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-def save_settings(settings):
-    """保存设置"""
-    path = os.path.join(get_settings_dir(), SETTINGS_FILE)
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-# ===================== API 层（不变）=====================
+# ═══════════════════════════════════════════════════════════
+#  工具函数（与原脚本一致）
+# ═══════════════════════════════════════════════════════════
 def clean_filename(name):
-    return re.sub(r"[\/\\\:\*\?\"\<\>\|]", "_", name)
+    """清理文件名中的非法字符"""
+    return re.sub(r'[\/\\\:\*\?\"\<\>\|]', '_', name)
+
 
 def api_request(url_params):
+    """发送API请求，带重试机制"""
     url = f"{BASE_URL}?{url_params}&key={API_KEY}"
     for attempt in range(MAX_RETRIES):
         try:
-            resp = requests.get(url, timeout=TIMEOUT, verify=False)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
+            req = urllib.request.Request(url, headers={
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36'
+            })
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+                data = response.read().decode('utf-8')
+                return json.loads(data)
+        except (urllib.error.URLError, json.JSONDecodeError, Exception) as e:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY)
             else:
                 raise Exception(f"API请求失败: {str(e)}")
+
 
 def get_book_info(book_id):
     result = api_request(f"method=ids&id={book_id}")
@@ -131,425 +83,549 @@ def get_book_info(book_id):
         return result['data']
     raise Exception(f"获取书籍信息失败: {result.get('message', '未知错误')}")
 
+
 def get_chapter_list(book_id):
     result = api_request(f"method=chapters&id={book_id}")
     if result.get('code') == 1:
         return result['data']
     raise Exception(f"获取章节列表失败: {result.get('message', '未知错误')}")
 
-def get_chapter_contents_batch(book_id, start, end):
-    result = api_request(f"method=chapter&id={book_id}&chapter={start}-{end}")
+
+def get_chapter_contents_batch(book_id, start_index, end_index):
+    chapter_range = f"{start_index}-{end_index}"
+    result = api_request(f"method=chapter&id={book_id}&chapter={chapter_range}")
     if result.get('code') == 1:
         return result['data']
-    raise Exception(f"批量获取章节失败: {result.get('message', '未知错误')}")
+    raise Exception(f"批量获取章节内容失败: {result.get('message', '未知错误')}")
+
 
 def clean_content(content):
-    content = content.replace('</p><p>', '\n').replace('<p>', '').replace('</p>', '\n')
-    content = re.sub(re.compile('<.*?>'), '', content)
+    """清理章节内容，去掉HTML标签"""
+    content = content.replace('</p><p>', '\n')
+    content = content.replace('<p>', '')
+    content = content.replace('</p>', '\n')
+    content = re.sub(r'<.*?>', '', content)
     content = re.sub(r'\n+', '\n', content).strip()
     return content
 
-def get_download_dir():
-    """获取下载目录"""
-    try:
-        if platform == 'android':
-            from jnius import autoclass
-            Environment = autoclass('android.os.Environment')
-            if Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED:
-                external_storage = Environment.getExternalStorageDirectory().getAbsolutePath()
-                download_dir = os.path.join(external_storage, 'Download', 'novels')
-                try:
-                    os.makedirs(download_dir, exist_ok=True)
-                    test_file = os.path.join(download_dir, '.test')
-                    with open(test_file, 'w') as f:
-                        f.write('test')
-                    os.remove(test_file)
-                    return download_dir
-                except Exception:
-                    pass
-            return os.path.join(App.get_running_app().user_data_dir, 'novels')
-        else:
-            downloads = os.path.join(os.path.expanduser('~'), 'Downloads')
-            return os.path.join(downloads, 'novels')
-    except Exception:
-        try:
-            return os.path.join(App.get_running_app().user_data_dir, 'novels')
-        except Exception:
-            return os.path.join(os.getcwd(), 'novels')
 
-# ===================== UI 组件 =====================
-class StyledButton(Button):
-    """统一样式的按钮"""
+def get_save_dir():
+    """
+    获取小说保存目录
+    Android: 优先外部存储/Novels，否则应用私有目录
+    桌面: ./novels
+    """
+    if _ANDROID:
+        try:
+            ext = primary_external_storage_path()
+            d = os.path.join(ext, 'Novels')
+            os.makedirs(d, exist_ok=True)
+            return d
+        except Exception:
+            pass
+    d = os.path.join(os.getcwd(), 'novels')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+# ═══════════════════════════════════════════════════════════
+#  Kivy UI 组件
+# ═══════════════════════════════════════════════════════════
+
+class LogScrollView(ScrollView):
+    """可滚动的日志区域"""
+    pass
+
+
+class MainLayout(BoxLayout):
+    """主界面布局"""
+    pass
+
+
+class NovelDownloaderApp(App):
+    """s丶ky书包"""
+
+    # ── 绑定到UI的属性 ──
+    status_text = StringProperty("就绪")
+    chapter_progress = StringProperty("")
+    progress_value = NumericProperty(0)        # 0 ~ 100
+    progress_max = NumericProperty(100)
+    log_text = StringProperty("")
+    is_downloading = BooleanProperty(False)
+    book_title_text = StringProperty("")
+    book_author_text = StringProperty("")
+    save_path_text = StringProperty("")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.background_normal = ''
-        self.background_color = COLORS['primary']
-        self.color = (1, 1, 1, 1)
-        self.font_size = '16sp'
-        self.bold = True
-        self.size_hint_y = None
-        self.height = 52
-        # 圆角效果通过 canvas 实现
-        with self.canvas.before:
-            Color(*COLORS['primary'])
-            self._bg_rect = Rectangle(size=self.size, pos=self.pos)
-        self.bind(pos=self._update_rect, size=self._update_rect)
+        self._download_thread = None
+        self._cancel_flag = False
 
-    def _update_rect(self, *args):
-        self._bg_rect.pos = self.pos
-        self._bg_rect.size = self.size
+    def build(self):
+        """构建界面"""
+        # 设置窗口颜色
+        Window.clearcolor = (0.12, 0.12, 0.14, 1)  # 深色背景
 
-    def on_state(self, widget, value):
-        if value == 'down':
-            self.background_color = COLORS['primary_dim']
-        else:
-            self.background_color = COLORS['primary']
+        self.root = MainLayout(orientation='vertical', padding=12, spacing=8)
 
-
-class NovelDownloader(BoxLayout):
-    def __init__(self, **kwargs):
-        super().__init__(
-            orientation='vertical',
-            padding=[20, 16, 20, 16],
-            spacing=12,
-            **kwargs
-        )
-
-        # 背景色
-        with self.canvas.before:
-            Color(*COLORS['bg'])
-            self._bg_rect = Rectangle(size=self.size, pos=self.pos)
-        self.bind(pos=self._update_bg, size=self._update_bg)
-
-        # ---- 标题栏 ----
-        title_box = BoxLayout(
+        # ── 顶部：标题 ──
+        title_bar = BoxLayout(
             orientation='horizontal',
             size_hint_y=None,
-            height=56,
-            spacing=10
+            height=48
         )
         title_label = Label(
-            text='s丶ky书包',
-            font_size='22sp',
-            bold=True,
-            color=COLORS['text_primary'],
-            size_hint_x=0.7,
+            text="[b]s丶ky书包[/b]  v2.1.2",
+            markup=True,
+            font_size=20,
+            color=(1, 0.85, 0.4, 1),  # 金色
             halign='left',
             valign='middle'
         )
         title_label.bind(size=title_label.setter('text_size'))
-        version_label = Label(
-            text='v1.2.1',
-            font_size='12sp',
-            color=COLORS['text_secondary'],
-            size_hint_x=0.3,
-            halign='right',
-            valign='middle'
-        )
-        version_label.bind(size=version_label.setter('text_size'))
-        title_box.add_widget(title_label)
-        title_box.add_widget(version_label)
-        self.add_widget(title_box)
+        title_bar.add_widget(title_label)
+        self.root.add_widget(title_bar)
 
-        # ---- 分割线 ----
-        self.add_widget(self._divider())
-
-        # ---- 输入区域 ----
-        input_label = Label(
-            text='输入book id',
-            font_size='14sp',
-            color=COLORS['text_secondary'],
+        # ── 书籍信息卡片 ──
+        info_card = GridLayout(
+            cols=1,
             size_hint_y=None,
-            height=24,
+            height=100,
+            spacing=4,
+            padding=[8, 6]
+        )
+        self._info_title = Label(
+            text="书名: --",
+            font_size=15,
+            color=(0.9, 0.9, 0.9, 1),
             halign='left',
-            valign='bottom'
+            valign='top',
+            text_size=(Window.width - 40, None)
         )
-        input_label.bind(size=input_label.setter('text_size'))
-        self.add_widget(input_label)
-
-        self.book_id_input = TextInput(
-            hint_text='例如: 7499553647647263806',
-            font_size='16sp',
-            size_hint_y=None,
-            height=50,
-            multiline=False,
-            background_color=COLORS['surface'],
-            foreground_color=COLORS['text_primary'],
-            cursor_color=COLORS['accent'],
-            padding=[14, 12, 14, 12],
-            hint_text_color=COLORS['text_secondary'],
+        self._info_author = Label(
+            text="作者: --",
+            font_size=13,
+            color=(0.7, 0.7, 0.7, 1),
+            halign='left',
+            valign='top',
+            text_size=(Window.width - 40, None)
         )
-        self.add_widget(self.book_id_input)
+        self._info_save = Label(
+            text="保存位置: --",
+            font_size=11,
+            color=(0.5, 0.8, 0.5, 1),
+            halign='left',
+            valign='top',
+            text_size=(Window.width - 40, None)
+        )
+        info_card.add_widget(self._info_title)
+        info_card.add_widget(self._info_author)
+        info_card.add_widget(self._info_save)
+        self.root.add_widget(info_card)
 
-        # ---- 按钮行 ----
-        btn_row = BoxLayout(
+        # ── 输入区域 ──
+        input_box = BoxLayout(
             orientation='horizontal',
             size_hint_y=None,
-            height=52,
-            spacing=12
+            height=50,
+            spacing=8
         )
-        self.download_btn = StyledButton(text='下载')
-        self.download_btn.bind(on_press=self.start_download)
-        self.clear_btn = Button(
-            text='清空日志',
-            font_size='14sp',
-            size_hint_y=None,
-            height=52,
-            background_normal='',
-            background_color=COLORS['surface'],
-            color=COLORS['text_secondary'],
+        self._book_id_input = TextInput(
+            hint_text="请输入book id",
+            multiline=False,
+            font_size=16,
+            background_color=(0.2, 0.2, 0.22, 1),
+            foreground_color=(1, 1, 1, 1),
+            cursor_color=(1, 0.85, 0.4, 1),
+            padding=[10, 14]
         )
-        self.clear_btn.bind(on_press=self._clear_output)
-        btn_row.add_widget(self.download_btn)
-        btn_row.add_widget(self.clear_btn)
-        self.add_widget(btn_row)
+        self._download_btn = Button(
+            text="开始下载",
+            font_size=16,
+            size_hint_x=0.35,
+            background_color=(0.25, 0.6, 0.3, 1),
+            color=(1, 1, 1, 1)
+        )
+        self._download_btn.bind(on_press=self.on_download_pressed)
+        input_box.add_widget(self._book_id_input)
+        input_box.add_widget(self._download_btn)
+        self.root.add_widget(input_box)
 
-        # ---- 进度条 ----
-        self.progress_bar = ProgressBar(
+        # ── 进度区域 ──
+        progress_box = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=55,
+            spacing=2
+        )
+        self._progress_bar = ProgressBar(
             max=100,
             value=0,
             size_hint_y=None,
-            height=8,
-            background_color=COLORS['surface'],
+            height=18
         )
-        self.add_widget(self.progress_bar)
+        self._progress_label = Label(
+            text="等待下载...",
+            font_size=12,
+            color=(0.7, 0.7, 0.7, 1),
+            halign='center',
+            valign='middle'
+        )
+        self._progress_label.bind(size=self._progress_label.setter('text_size'))
+        progress_box.add_widget(self._progress_bar)
+        progress_box.add_widget(self._progress_label)
+        self.root.add_widget(progress_box)
 
-        # ---- 状态标签 ----
-        self.status_label = Label(
-            text='就绪',
-            font_size='13sp',
-            color=COLORS['text_secondary'],
+        # ── 日志区域（可滚动）──
+        log_label = Label(
+            text="运行日志",
+            font_size=12,
+            color=(0.5, 0.5, 0.6, 1),
             size_hint_y=None,
-            height=28,
+            height=20,
             halign='left',
             valign='middle'
         )
-        self.status_label.bind(size=self.status_label.setter('text_size'))
-        self.add_widget(self.status_label)
+        log_label.bind(size=log_label.setter('text_size'))
+        self.root.add_widget(log_label)
 
-        # ---- 输出区域 ----
-        self.output_label = Label(
-            text='',
-            font_size='14sp',
-            color=COLORS['text_primary'],
-            size_hint_y=None,
+        self._log_scroll = ScrollView(
+            size_hint=(1, 1),
+            do_scroll_x=False
+        )
+        self._log_content = Label(
+            text="",
+            font_size=11,
+            color=(0.8, 0.8, 0.8, 1),
             halign='left',
             valign='top',
             markup=True,
+            padding=[6, 4]
         )
-        self.output_label.bind(
-            texture_size=self._on_texture_size,
-            size=self._on_label_size
+        self._log_content.bind(
+            size=lambda s, v: setattr(s, 'text_size', (v[0], None))
         )
-        self.scroll_view = ScrollView(
-            size_hint=(1, 1),
-            bar_color=COLORS['primary'],
-            bar_width=6,
+        self._log_scroll.add_widget(self._log_content)
+        self.root.add_widget(self._log_scroll)
+
+        # ── 底部按钮 ──
+        bottom_box = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=44,
+            spacing=8
         )
-        self.scroll_view.add_widget(self.output_label)
-        self.add_widget(self.scroll_view)
+        self._cancel_btn = Button(
+            text="取消下载",
+            font_size=14,
+            background_color=(0.7, 0.25, 0.2, 1),
+            color=(1, 1, 1, 1),
+            disabled=True
+        )
+        self._cancel_btn.bind(on_press=self.on_cancel_pressed)
 
-        # ---- 设置加载 ----
-        self._settings = load_settings()
-        last_id = self._settings.get('last_book_id', '')
-        if last_id:
-            self.book_id_input.text = last_id
-            self._append_output(f'[color=#999]上次的book id: {last_id}[/color]\n')
+        self._open_dir_btn = Button(
+            text="打开下载目录",
+            font_size=14,
+            background_color=(0.2, 0.35, 0.6, 1),
+            color=(1, 1, 1, 1)
+        )
+        self._open_dir_btn.bind(on_press=self.on_open_dir_pressed)
 
-        self._update_event = None
+        bottom_box.add_widget(self._cancel_btn)
+        bottom_box.add_widget(self._open_dir_btn)
+        self.root.add_widget(bottom_box)
 
-    # ---------- 辅助方法 ----------
-    def _divider(self):
-        """创建分割线"""
-        d = BoxLayout(size_hint_y=None, height=1)
-        with d.canvas.before:
-            Color(*COLORS['divider'])
-            Rectangle(size=d.size, pos=d.pos)
-        d.bind(pos=lambda w, v: w.canvas.before.children[0].pos.__setitem__(slice(None), v),
-               size=lambda w, v: w.canvas.before.children[0].size.__setitem__(slice(None), v))
-        return d
+        return self.root
 
-    def _update_bg(self, *args):
-        self._bg_rect.pos = self.pos
-        self._bg_rect.size = self.size
+    def on_start(self):
+        """App启动后的初始化"""
+        if _ANDROID and _ANDROID_PERM:
+            # 请求存储权限
+            request_permissions([
+                Permission.WRITE_EXTERNAL_STORAGE,
+                Permission.READ_EXTERNAL_STORAGE,
+            ])
+        # 显示保存路径
+        save_dir = get_save_dir()
+        self._info_save.text = f"保存位置: {save_dir}"
 
-    def _on_texture_size(self, instance, value):
-        instance.size = value
+    # ── 事件处理 ──
 
-    def _on_label_size(self, instance, value):
-        instance.text_size = (instance.width, None)
-
-    def _clear_output(self, instance):
-        self.output_label.text = ''
-        self.progress_bar.value = 0
-        self.status_label.text = '日志已清空'
-
-    # ---------- 输出方法 ----------
-    def _append_output(self, text):
-        def _update(dt):
-            self.output_label.text += text
-            self.output_label.texture_update()
-            self.output_label.height = self.output_label.texture_size[1]
-            # 滚动到底部
-            self.scroll_view.scroll_y = 0
-        Clock.schedule_once(_update, 0)
-
-    def _set_output(self, text):
-        def _update(dt):
-            self.output_label.text = text
-            self.output_label.texture_update()
-            self.output_label.height = self.output_label.texture_size[1]
-        Clock.schedule_once(_update, 0)
-
-    def _update_progress(self, value):
-        def _update(dt):
-            self.progress_bar.value = value
-        Clock.schedule_once(_update, 0)
-
-    def _set_status(self, text, color=None):
-        def _update(dt):
-            self.status_label.text = text
-            if color:
-                self.status_label.color = color
-        Clock.schedule_once(_update, 0)
-
-    # ---------- 下载逻辑 ----------
-    def start_download(self, instance):
-        book_id = self.book_id_input.text.strip()
-        if not book_id:
-            self._set_status('请输入有效的book id', COLORS['error'])
+    def on_download_pressed(self, instance):
+        """按下「开始下载」按钮"""
+        if self.is_downloading:
             return
 
-        # 记住book_id
-        self._settings['last_book_id'] = book_id
-        save_settings(self._settings)
+        book_id = self._book_id_input.text.strip()
+        if not book_id:
+            self._show_popup("提示", "请输入 book id")
+            return
 
-        self.download_btn.disabled = True
-        self.progress_bar.value = 0
-        self._set_status('正在获取书籍信息...', COLORS['accent'])
-        self._append_output(f'\n[color=#5a8ab5]━━━ 开始下载book id: {book_id} ━━━[/color]\n')
-        threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
+        if not book_id.isdigit():
+            self._show_popup("提示", "book id必须是数字")
+            return
 
-    def _download_novel(self, book_id):
+        # 重置状态
+        self._cancel_flag = False
+        self.is_downloading = True
+        self._download_btn.disabled = True
+        self._cancel_btn.disabled = False
+        self._log_content.text = ""
+        self._progress_bar.value = 0
+        self._progress_label.text = "正在获取书籍信息..."
+        self._info_title.text = "书名: --"
+        self._info_author.text = "作者: --"
+
+        # 启动后台下载线程
+        self._download_thread = threading.Thread(
+            target=self._do_download,
+            args=(book_id,),
+            daemon=True
+        )
+        self._download_thread.start()
+
+    def on_cancel_pressed(self, instance):
+        """按下「取消下载」按钮"""
+        self._cancel_flag = True
+        self._append_log("\n[color=#FF6644]正在取消...[/color]")
+
+    def on_open_dir_pressed(self, instance):
+        """按下「打开下载目录」按钮"""
+        save_dir = get_save_dir()
+        if _ANDROID:
+            try:
+                from android.content import Intent
+                from android.os import Environment
+                from jnius import cast
+                import android.activity
+                # 简单做法：显示路径
+                self._show_popup(
+                    "下载目录",
+                    f"文件保存在:\n{save_dir}\n\n请使用文件管理器查看。"
+                )
+            except Exception:
+                self._show_popup("下载目录", f"路径: {save_dir}")
+        else:
+            # 桌面端：尝试用系统文件管理器打开
+            import platform
+            import subprocess
+            try:
+                system = platform.system()
+                if system == 'Windows':
+                    os.startfile(save_dir)
+                elif system == 'Darwin':
+                    subprocess.run(['open', save_dir])
+                else:
+                    subprocess.run(['xdg-open', save_dir])
+            except Exception:
+                self._show_popup("下载目录", f"路径: {save_dir}")
+
+    # ── 后台下载逻辑 ──
+
+    def _do_download(self, book_id):
+        """在后台线程中执行下载"""
         try:
-            # 获取书籍信息
-            info = get_book_info(book_id)
-            title = info['title']
-            author = info['author']
-            intro = info.get('docs', '').replace('\n', ' ')
-            self._append_output(
-                f'[b]书名:[/b] {title}\n'
-                f'[b]作者:[/b] {author}\n'
-                f'[b]简介:[/b] {intro[:120]}{"..." if len(intro) > 120 else ""}\n'
-            )
+            book_id_int = int(book_id)
 
-            # 获取章节列表
-            chapters_data = get_chapter_list(book_id)
+            # 1. 获取书籍信息
+            self._update_ui_log("获取书籍信息...")
+            book_info = get_book_info(book_id_int)
+            book_title = book_info['title']
+            author = book_info.get('author', '未知')
+            intro = book_info.get('docs', '').replace('\n', ' ')
+
+            self._update_ui_info(book_title, author)
+            self._update_ui_log(f"  书名: [b]{book_title}[/b]")
+            self._update_ui_log(f"  作者: {author}")
+            self._update_ui_log(f"  简介: {intro[:80]}{'...' if len(intro) > 80 else ''}")
+
+            # 2. 获取章节列表
+            self._update_ui_log("获取章节列表...")
+            self._update_ui_progress_label("正在获取章节列表...")
+            chapters_data = get_chapter_list(book_id_int)
+
+            # 展平章节列表
             chapters = []
-            for vol in chapters_data:
-                if isinstance(vol, list):
-                    chapters.extend(vol)
-                elif isinstance(vol, dict):
-                    chapters.append(vol)
+            for volume in chapters_data:
+                if isinstance(volume, list):
+                    chapters.extend(volume)
+                elif isinstance(volume, dict):
+                    chapters.append(volume)
 
-            total = len(chapters)
-            self._append_output(f'[b]共 {total} 章[/b]，开始下载...\n\n')
-            self._set_status(f'第0/{total} 章', COLORS['accent'])
+            total_chapters = len(chapters)
+            self._update_ui_log(f"  共 [b]{total_chapters}[/b] 章")
 
-            safe_title = clean_filename(title)
-            output_dir = get_download_dir()
-            os.makedirs(output_dir, exist_ok=True)
-            output_file = os.path.join(output_dir, f"{safe_title}.txt")
+            # 3. 准备保存
+            safe_title = clean_filename(book_title)
+            save_dir = get_save_dir()
+            output_file = os.path.join(save_dir, f"{safe_title}.txt")
 
-            self._append_output(f'[b]保存路径:[/b] {output_dir}\n\n')
+            self._update_ui_progress_max(total_chapters)
 
-            # 写文件头
+            # 4. 写入文件头
             with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(f"{title}\n作者: {author}\n简介:\n{intro}\n\n")
+                f.write(f"{book_title}\n")
+                f.write(f"作者: {author}\n")
+                f.write(f"简介:\n{intro}\n\n")
 
-                BATCH = 30
-                for start in range(1, total + 1, BATCH):
-                    end = min(start + BATCH - 1, total)
+                # 5. 批量下载章节
+                for start in range(1, total_chapters + 1, BATCH_SIZE):
+                    if self._cancel_flag:
+                        self._update_ui_log("[color=#FF6644]用户取消下载[/color]")
+                        break
+
+                    end = min(start + BATCH_SIZE - 1, total_chapters)
+
                     try:
-                        batch = get_chapter_contents_batch(book_id, start, end)
+                        batch_data = get_chapter_contents_batch(book_id_int, start, end)
                     except Exception as e:
-                        self._append_output(f'[color=#cc4444]批量 {start}-{end} 失败: {e}[/color]\n')
+                        self._update_ui_log(f"[color=#FF6644]批量下载失败 ({start}-{end}): {e}[/color]")
+                        # 逐章重试
+                        for chap_idx in range(start, end + 1):
+                            if self._cancel_flag:
+                                break
+                            self._update_ui_progress(chap_idx, total_chapters)
+                            f.write(f"第{chap_idx}章\n\n[下载失败]\n\n")
                         continue
 
-                    chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
-                    for idx in range(start, end + 1):
-                        info_chap = chap_dict.get(idx)
-                        orig = next((ch for ch in chapters if ch.get('index') == idx), None)
-                        chap_title = orig['title'] if orig else (
-                            info_chap.get('chapter_title', f'第{idx}章') if info_chap else f'第{idx}章'
+                    # 将返回列表转为字典
+                    chapter_dict = {}
+                    for item in batch_data:
+                        cn = item.get('chapter')
+                        if cn is not None:
+                            chapter_dict[int(cn)] = item
+
+                    # 按顺序写入
+                    for chap_idx in range(start, end + 1):
+                        if self._cancel_flag:
+                            break
+
+                        chapter_info = chapter_dict.get(chap_idx)
+                        original_chapter = next(
+                            (ch for ch in chapters if ch.get('index') == chap_idx),
+                            None
                         )
-                        percent = (idx / total) * 100
-                        self._set_status(f'⬇ {idx}/{total} ({percent:.1f}%)', COLORS['accent'])
-                        self._update_progress(percent)
+                        title = (
+                            original_chapter['title']
+                            if original_chapter
+                            else chapter_info.get('chapter_title', f'第{chap_idx}章')
+                        )
 
-                        if info_chap:
-                            content = clean_content(info_chap.get('content', ''))
-                            if content.lstrip().startswith(chap_title):
-                                content = content.lstrip()[len(chap_title):].strip()
-                            f.write(f"{chap_title}\n{content}\n\n")
+                        self._update_ui_progress(chap_idx, total_chapters)
+
+                        if chapter_info:
+                            content = chapter_info.get('content', '')
+                            content = clean_content(content)
+                            # 如果内容以标题开头，去掉重复的标题
+                            if content.lstrip().startswith(title):
+                                content = content.lstrip()[len(title):].strip()
+                            f.write(f"{title}\n{content}\n\n")
                         else:
-                            f.write(f"{chap_title}\n[内容缺失]\n\n")
+                            f.write(f"{title}\n[内容缺失]\n\n")
 
-            self._update_progress(100)
-            self._set_status(f'下载了{total}章', COLORS['success'])
-            self._append_output(
-                f'\n[color=#4db86b]下载完成！[/color]\n'
-                f'[b]文件:[/b] {output_file}\n'
-                f'[b]章节:[/b] {total}\n'
-                f'[b]目录:[/b] {output_dir}\n\n'
-            )
+            # 6. 完成
+            if not self._cancel_flag:
+                self._update_ui_progress(total_chapters, total_chapters)
+                self._update_ui_log(f"\n[b]下载完成！[/b]")
+                self._update_ui_log(f"文件: {output_file}")
+                self._update_ui_progress_label("下载完成！")
+            else:
+                self._update_ui_progress_label("已取消")
+
         except Exception as e:
-            self._update_progress(0)
-            self._set_status(f'下载失败', COLORS['error'])
-            self._append_output(f'\n[color=#cc4444]下载失败: {str(e)}[/color]\n\n')
+            import traceback
+            err_msg = traceback.format_exc()
+            self._update_ui_log(f"\n[color=#FF4444]下载失败: {str(e)}[/color]")
+            self._update_ui_log(f"[color=#666666]{err_msg[-500:]}[/color]")
+            self._update_ui_progress_label(f"失败: {str(e)[:50]}")
+
         finally:
-            def enable_btn(dt):
-                self.download_btn.disabled = False
-            Clock.schedule_once(enable_btn, 0)
+            # 恢复UI状态
+            self._on_download_finished()
 
+    # ── UI更新方法（线程安全）──
 
-class TomatoNovelApp(App):
-    def build(self):
-        self.title = 's丶ky书包'
-
-        # ---- 注册中文字体（使用系统字体，零体积） ----
-        font_path = _find_system_chinese_font()
-        if font_path:
-            try:
-                LabelBase.register(name='Roboto', fn_regular=font_path)
-                print(f'[Font] 注册了字体: {font_path}')
-            except Exception as e:
-                print(f'[Font] 字体注册失败: {e}')
+    @mainthread
+    def _update_ui_log(self, message):
+        """往日志追加一行"""
+        current = self._log_content.text
+        if current:
+            current += "\n" + message
         else:
-            print('[Font] 未找到中文字体')
+            current = message
+        self._log_content.text = current
+        # 自动滚动到底部
+        if self._log_scroll:
+            self._log_scroll.scroll_y = 0
 
-        # ---- Android 权限请求 ----
-        if platform == 'android':
-            try:
-                from android.permissions import request_permissions, Permission
-                permissions_needed = [
-                    Permission.WRITE_EXTERNAL_STORAGE,
-                    Permission.READ_EXTERNAL_STORAGE,
-                ]
-                try:
-                    permissions_needed.extend([
-                        Permission.READ_MEDIA_IMAGES,
-                        Permission.READ_MEDIA_VIDEO,
-                        Permission.READ_MEDIA_AUDIO,
-                    ])
-                except Exception:
-                    pass
-                request_permissions(permissions_needed)
-            except Exception as e:
-                print(f'[Perm] 权限请求失败: {e}')
+    @mainthread
+    def _update_ui_info(self, title, author):
+        """更新书名和作者"""
+        self._info_title.text = f"书名: {title}"
+        self._info_author.text = f"作者: {author}"
 
-        return NovelDownloader()
+    @mainthread
+    def _update_ui_progress(self, current, total):
+        """更新进度条"""
+        if total > 0:
+            self._progress_bar.max = total
+            self._progress_bar.value = current
+            percent = (current / total) * 100
+            self._progress_label.text = f"下载中: {current}/{total} ({percent:.1f}%)"
+
+    @mainthread
+    def _update_ui_progress_max(self, total):
+        self._progress_bar.max = total
+        self._progress_bar.value = 0
+
+    @mainthread
+    def _update_ui_progress_label(self, text):
+        self._progress_label.text = text
+
+    @mainthread
+    def _on_download_finished(self):
+        """下载结束后的UI恢复"""
+        self.is_downloading = False
+        self._download_btn.disabled = False
+        self._cancel_btn.disabled = True
+
+    @mainthread
+    def _show_popup(self, title, message):
+        """显示弹窗"""
+        from kivy.uix.popup import Popup
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        msg_label = Label(
+            text=message,
+            font_size=14,
+            color=(1, 1, 1, 1),
+            halign='left',
+            valign='top'
+        )
+        msg_label.bind(size=msg_label.setter('text_size'))
+        btn = Button(
+            text="确定",
+            size_hint_y=None,
+            height=40,
+            background_color=(0.25, 0.6, 0.3, 1)
+        )
+        content.add_widget(msg_label)
+        content.add_widget(btn)
+
+        popup = Popup(
+            title=title,
+            content=content,
+            size_hint=(0.82, 0.45),
+            auto_dismiss=True,
+            title_color=(1, 0.85, 0.4, 1),
+            separator_color=(1, 0.85, 0.4, 0.5)
+        )
+        btn.bind(on_press=popup.dismiss)
+        popup.open()
 
 
+# ═══════════════════════════════════════════════════════════
+#  入口
+# ═══════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    TomatoNovelApp().run()
+    NovelDownloaderApp().run()
