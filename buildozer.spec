@@ -21,10 +21,6 @@ source.exclude_exts = spec
 # (str) 应用版本号
 version = 1.2.2
 
-# (str) 应用版本名
-version.regex = __version__ = ['"](.*)['"]
-version.filename = %(source.dir)s/main.py
-
 # (list) 构建要求
 # 对于 Kivy 应用，buildozer 会自动包含 kivy
 requirements = python3,kivy
