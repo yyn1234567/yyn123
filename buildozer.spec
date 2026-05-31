@@ -1,74 +1,51 @@
 [app]
-
-# (str) 应用程序标题
 title = s丶ky书包
-
-# (str) 包名（必须唯一，建议用你自己的域名风格）
 package.name = fq
-
-# (str) 包域名（用于Java包名生成）
 package.domain = com.yyn123.fq
-
-# (str) 主程序入口文件
 source.dir = .
-
-# (list) 包含的源文件
 source.include_exts = py,png,jpg,kv,atlas,ttf
-
-# (list) 排除的源文件模式
-source.exclude_exts = spec
-
-# (str) 应用版本号
-version = 1.2.2
-
-# (list) 构建要求
-# 对于 Kivy 应用，buildozer 会自动包含 kivy
-requirements = python3,kivy
-
-# (str) 支持的Android最低API等级
-android.minapi = 24
-
-# (str) 目标API等级（建议 >= 33）
-android.api = 34
-
-# (str) 编译SDK等级
-android.ndk = 25b
-
-# (str) Android SDK版本
-android.sdk = 34
-
-# (list) Android 权限
-android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
-
-# (list) Android 功能
-android.features = android.hardware.screen_portrait
-
-# (bool) 允许代码混淆（减小体积）
-android.release = False
-
-# (str) 默认横竖屏
+version = 1.2.3
+requirements = python3,kivy,requests,libiconv,libffi,pyjnius,android
+icon.filename = icon.png
+presplash.filename = presplash.png
+fullscreen = 0
 orientation = portrait
+entrypoint = main.py
 
-# (list) 支持的横竖屏
-android.allow_backup = True
+# Don't change these
+android.accept_sdk_license = True
+android.allow_api_min = 21
+android.api = 35
+android.minapi = 21
+android.ndk = 25b
+exclude_patterns = **/test/*, **/tests/*
+android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
+android.gradle_plugin = 7.4.2
+android.sdk = 35
+android.ndk_api = 21
+p4a.gradle_dependencies = gradle:7.6.4
+p4a.bootstrap = sdl2
+p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
 
-# (str) 图标路径（你需要准备一个 512x512 的 PNG）
-icon.filename = %(source.dir)s/icon.png
+# Android permissions - Updated for Android 15 compatibility
+android.permissions = INTERNET,WAKE_LOCK,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,MANAGE_EXTERNAL_STORAGE
 
-# (str) 启动画面（可选）
-presplash.filename = %(source.dir)s/presplash.png
+# Android 11+ scoped storage compatibility
+android.add_src = android/src/main/java/com/yyn123/fq/FileProvider.java
 
-# (list) 需要包含的额外文件/目录
-source.include_patterns = 
+# Following is required for release mode
+android.aab = False
 
-# (bool) 是否使用Gradle构建
-android.gradle_dependencies = 
+# Signature configuration (uncomment and configure for release builds)
+#android.keystore = /home/runner/work/yyn123/AndAgain/com.yyn123.fq.keystore
+#android.keystore_storepass = android
+#android.keystore_keypass = android
+#android.keystore_alias = com.yyn123.fq
 
-# (bool) Kivy 应用专用
-osx.kivy_version = 2.3.0
+# Android manifest additions
+android.manifest_placeholders = [:]
+android.manifest = <manifest><uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/></manifest>
 
-# (str) 构建日志级别: trace, debug( verbose), info, warning, error, critical
-log_level = 1
-
-# (bool) 允许调试模式
-android.enable_androidx = True
+[buildozer]
+log_level = 2
+warn_on_root = 1
