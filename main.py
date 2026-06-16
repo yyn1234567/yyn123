@@ -3,7 +3,6 @@
 import json, os, time, re, threading
 import requests
 import urllib3
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from kivy.app import App
@@ -15,32 +14,24 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 from kivy.clock import Clock
 from kivy.core.text import LabelBase
-from kivy.core.window import Window
 from kivy.utils import platform
-from kivy.graphics import Color, RoundedRectangle, Rectangle
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Line
+from kivy.core.window import Window
 
-# ============================================================
-# 颜色主题（温暖阅读风）
-# ============================================================
-COLOR_BG = (0.961, 0.941, 0.922, 1)
-COLOR_CARD = (1, 1, 1, 1)
-COLOR_PRIMARY = (0.784, 0.475, 0.255, 1)
-COLOR_PRIMARY_DOWN = (0.659, 0.365, 0.180, 1)
-COLOR_PRIMARY_DISABLED = (0.82, 0.78, 0.75, 1)
-COLOR_TITLE = (0.290, 0.188, 0.157, 1)
-COLOR_BODY = (0.361, 0.251, 0.200, 1)
-COLOR_SUBTLE = (0.549, 0.482, 0.459, 1)
-COLOR_INPUT_BORDER = (0.867, 0.831, 0.800, 1)
-COLOR_INPUT_FOCUS = (0.784, 0.475, 0.255, 1)
-COLOR_OUTPUT_BG = (0.980, 0.976, 0.969, 1)
-COLOR_SUCCESS = (0.357, 0.549, 0.353, 1)
-COLOR_ERROR = (0.753, 0.224, 0.169, 1)
-COLOR_WHITE = (1, 1, 1, 1)
-COLOR_SEPARATOR = (0.89, 0.86, 0.83, 1)
+# ============== 配色方案 ==============
+BG_PRIMARY    = (0.067, 0.067, 0.118, 1)   # 深蓝黑背景
+BG_CARD       = (0.106, 0.114, 0.196, 1)   # 卡片背景
+ACCENT        = (0.298, 0.643, 0.918, 1)   # 主题蓝
+ACCENT_PRESS  = (0.200, 0.480, 0.780, 1)   # 按下蓝色
+SUCCESS       = (0.298, 0.780, 0.549, 1)   # 成功绿
+DANGER        = (0.914, 0.271, 0.271, 1)   # 警告红
+TEXT_WHITE     = (0.957, 0.957, 0.973, 1)   # 主文字
+TEXT_GRAY      = (0.580, 0.600, 0.675, 1)   # 辅助文字
+INPUT_BG      = (0.125, 0.133, 0.231, 1)   # 输入框背景
+INPUT_BORDER  = (0.220, 0.240, 0.360, 1)   # 输入框边框
+SCROLL_BG     = (0.086, 0.090, 0.157, 1)   # 滚动区背景
+DIVIDER       = (0.200, 0.220, 0.340, 1)   # 分隔线
 
-# ============================================================
-# 后端函数（完全不变）
-# ============================================================
 BASE_URL = "https://oiapi.net/api/FqRead"
 API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
 MAX_RETRIES = 3
@@ -95,15 +86,12 @@ def clean_content(content):
 
 
 def get_download_dir():
-    """
-    获取系统Download/novels目录，兼容不同Android版本。
-    ⚠️ 内部使用了 jnius（Android JNI），必须在主线程中调用！
-    """
+    """获取系统Download/novels目录，兼容不同Android版本"""
     try:
         if platform == 'android':
             from jnius import autoclass
             Environment = autoclass('android.os.Environment')
-
+            from android.permissions import check_permission, Permission
             if Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED:
                 external_storage = Environment.getExternalStorageDirectory().getAbsolutePath()
                 download_dir = os.path.join(external_storage, 'Download', 'novels')
@@ -120,329 +108,356 @@ def get_download_dir():
         else:
             downloads = os.path.join(os.path.expanduser('~'), 'Downloads')
             return os.path.join(downloads, 'novels')
-    except Exception:
+    except Exception as e:
         try:
             return os.path.join(App.get_running_app().user_data_dir, 'novels')
         except:
             return os.path.join(os.getcwd(), 'novels')
 
 
-# ============================================================
-# 自定义UI组件（与之前一致，仅修复 RoundedTextInput 边框）
-# ============================================================
-
-class RoundedButton(Button):
-    """圆角按钮，支持按压反馈与禁用态"""
-
-    def __init__(self, bg_color=COLOR_PRIMARY, text_color=COLOR_WHITE,
-                 radius=14, **kwargs):
-        super().__init__(**kwargs)
-        self._bg_normal = bg_color
-        self._bg_down = COLOR_PRIMARY_DOWN
-        self._bg_disabled = COLOR_PRIMARY_DISABLED
-        self._radius = radius
-        self._text_color = text_color
-
-        self.background_normal = ''
-        self.background_down = ''
-        self.background_disabled_normal = ''
-        self.background_color = (0, 0, 0, 0)
-        self.color = self._text_color
-        self.bold = True
-
-        with self.canvas.before:
-            self._btn_color = Color(*self._bg_normal)
-            self._btn_rect = RoundedRectangle(
-                pos=self.pos, size=self.size, radius=[self._radius]
-            )
-        self.bind(pos=self._update_rect, size=self._update_rect,
-                  state=self._on_state_change,
-                  disabled=self._on_disabled_change)
-
-    def _update_rect(self, *args):
-        self._btn_rect.pos = self.pos
-        self._btn_rect.size = self.size
-
-    def _on_state_change(self, instance, state):
-        if self.disabled:
-            return
-        if state == 'down':
-            self._btn_color.rgba = self._bg_down
-        else:
-            self._btn_color.rgba = self._bg_normal
-
-    def _on_disabled_change(self, instance, disabled):
-        if disabled:
-            self._btn_color.rgba = self._bg_disabled
-            self.color = (0.75, 0.72, 0.70, 1)
-        else:
-            self._btn_color.rgba = self._bg_normal
-            self.color = self._text_color
-
-
-class RoundedTextInput(TextInput):
-    """圆角输入框，焦点边框变色（双层矩形模拟细边框）"""
-
-    def __init__(self, border_width=1.5, radius=12, **kwargs):
-        super().__init__(**kwargs)
-        self._radius = radius
-        self._border_width = border_width
-        self._border_color = COLOR_INPUT_BORDER
-        self._focus_color = COLOR_INPUT_FOCUS
-
-        self.background_normal = ''
-        self.background_active = ''
-        self.background_color = (0, 0, 0, 0)
-        self.foreground_color = COLOR_BODY
-        self.cursor_color = COLOR_PRIMARY
-        self.padding = [14, 12, 14, 12]
-        self.font_size = '15sp'
-
-        with self.canvas.before:
-            # 底层：边框色矩形
-            self._border_color_inst = Color(*self._border_color)
-            self._border_rect = RoundedRectangle(
-                pos=self.pos, size=self.size, radius=[self._radius]
-            )
-            # 上层：填充色矩形（内缩）
-            self._bg_color = Color(*COLOR_CARD)
-            self._bg_rect = RoundedRectangle(
-                pos=(self.x + self._border_width,
-                     self.y + self._border_width),
-                size=(self.width - 2 * self._border_width,
-                      self.height - 2 * self._border_width),
-                radius=[max(0, self._radius - self._border_width)]
-            )
-
-        self.bind(pos=self._update_rects, size=self._update_rects,
-                  focus=self._on_focus_change)
-
-    def _update_rects(self, *args):
-        bw = self._border_width
-        self._border_rect.pos = self.pos
-        self._border_rect.size = self.size
-        self._bg_rect.pos = (self.x + bw, self.y + bw)
-        self._bg_rect.size = (self.width - 2 * bw, self.height - 2 * bw)
-        r = max(0, self._radius - bw)
-        self._bg_rect.radius = [r]
-
-    def _on_focus_change(self, instance, focused):
-        if focused:
-            self._border_color_inst.rgba = self._focus_color
-        else:
-            self._border_color_inst.rgba = self._border_color
-
-
-class StyledScrollView(ScrollView):
-    """带浅色背景的滚动视图"""
-
+class RoundedInput(TextInput):
+    """自定义圆角输入框"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.bar_width = 8
-        self.bar_color = COLOR_SUBTLE[:3] + (0.5,)
-        self.bar_inactive_color = COLOR_SUBTLE[:3] + (0.25,)
-        self.scroll_type = ['bars', 'content']
+        self.background_color = (0, 0, 0, 0)  # 透明背景
+        self.foreground_color = TEXT_WHITE
+        self.cursor_color = ACCENT
+        self.hint_text_color = (*TEXT_GRAY[:3], 0.6)
+        self.font_size = '16sp'
+        self.padding = [18, 14, 18, 14]
+        self.multiline = False
+        self.size_hint_y = None
+        self.height = 52
 
+    def on_size(self, *args):
+        self._update_bg()
+
+    def on_pos(self, *args):
+        self._update_bg()
+
+    def _update_bg(self):
+        self.canvas.before.clear()
         with self.canvas.before:
-            self._sv_bg_color = Color(*COLOR_OUTPUT_BG)
-            self._sv_bg_rect = Rectangle(pos=self.pos, size=self.size)
+            # 外边框
+            Color(*INPUT_BORDER)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
+            # 内背景
+            Color(*INPUT_BG)
+            RoundedRectangle(
+                pos=(self.x + 1, self.y + 1),
+                size=(self.width - 2, self.height - 2),
+                radius=[9]
+            )
+
+
+class RoundedButton(Button):
+    """自定义圆角按钮"""
+    def __init__(self, **kwargs):
+        self.btn_color = kwargs.pop('btn_color', ACCENT)
+        self.btn_color_press = kwargs.pop('btn_color_press', ACCENT_PRESS)
+        super().__init__(**kwargs)
+        self.background_color = (0, 0, 0, 0)
+        self.background_normal = ''
+        self.background_down = ''
+        self.color = TEXT_WHITE
+        self.font_size = '17sp'
+        self.bold = True
+        self.size_hint_y = None
+        self.height = 52
+        self._pressed = False
+
+    def on_size(self, *args):
+        self._update_bg()
+
+    def on_pos(self, *args):
+        self._update_bg()
+
+    def on_press(self):
+        self._pressed = True
+        self._update_bg()
+
+    def on_release(self):
+        self._pressed = False
+        self._update_bg()
+
+    def _update_bg(self):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            c = self.btn_color_press if (self._pressed or self.disabled) else self.btn_color
+            if self.disabled:
+                c = (*c[:3], 0.5)
+            Color(*c)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
+
+
+class CardBox(BoxLayout):
+    """带圆角背景的卡片容器"""
+    def __init__(self, **kwargs):
+        card_color = kwargs.pop('card_color', BG_CARD)
+        radius = kwargs.pop('radius', 12)
+        self._card_color = card_color
+        self._radius = radius
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(*self._card_color)
+            self._bg_rect = RoundedRectangle(
+                pos=self.pos, size=self.size, radius=[self._radius]
+            )
         self.bind(pos=self._update_bg, size=self._update_bg)
 
     def _update_bg(self, *args):
-        self._sv_bg_rect.pos = self.pos
-        self._sv_bg_rect.size = self.size
+        self._bg_rect.pos = self.pos
+        self._bg_rect.size = self.size
 
 
-# ============================================================
-# 主界面（修复高度计算 + 线程安全）
-# ============================================================
+class OutputLabel(Label):
+    """自定义输出标签"""
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.color = TEXT_WHITE
+        self.font_size = '14sp'
+        self.halign = 'left'
+        self.valign = 'top'
+        self.text_size = (None, None)
+        self.markup = True
+        self.line_height = 1.4
+
 
 class NovelDownloader(BoxLayout):
     def __init__(self, **kwargs):
-        super().__init__(orientation='vertical', padding=18, spacing=10, **kwargs)
+        super().__init__(orientation='vertical', padding=0, spacing=0, **kwargs)
 
-        # ---------- 主背景 ----------
+        # ====== 全局背景 ======
         with self.canvas.before:
-            Color(*COLOR_BG)
-            self._main_bg = Rectangle(pos=self.pos, size=self.size)
-        self.bind(pos=self._update_main_bg, size=self._update_main_bg)
+            Color(*BG_PRIMARY)
+            self._bg = Rectangle(pos=self.pos, size=self.size)
+        self.bind(pos=self._update_canvas, size=self._update_canvas)
 
-        # ---------- 标题区 ----------
-        title_box = BoxLayout(
-            orientation='horizontal',
-            size_hint_y=None, height=56,
+        # ====== 主内容区 ======
+        main_layout = BoxLayout(
+            orientation='vertical',
+            padding=[16, 12, 16, 16],
+            spacing=12
+        )
+
+        # ---- 顶部标题栏 ----
+        header = CardBox(
+            orientation='vertical',
+            size_hint_y=None,
+            height=90,
+            padding=[20, 15, 20, 15],
+            spacing=4,
+            card_color=(0.114, 0.125, 0.216, 1)
+        )
+
+        # 标题装饰线
+        accent_bar = Widget(size_hint_y=None, height=3)
+        with accent_bar.canvas:
+            Color(*ACCENT)
+            RoundedRectangle(pos=accent_bar.pos, size=(0, 3), radius=[2])
+        accent_bar.bind(pos=lambda w, *a: self._update_bar(w), size=lambda w, *a: self._update_bar(w))
+
+        title_label = Label(
+            text='📚  fq 小说下载器',
+            font_size='22sp',
+            bold=True,
+            color=TEXT_WHITE,
+            size_hint_y=None,
+            height=36,
+            halign='left',
+            valign='middle'
+        )
+        title_label.bind(size=title_label.setter('text_size'))
+
+        subtitle_label = Label(
+            text='v1.2.6 · 输入 Book ID 即可开始下载',
+            font_size='13sp',
+            color=TEXT_GRAY,
+            size_hint_y=None,
+            height=22,
+            halign='left',
+            valign='middle'
+        )
+        subtitle_label.bind(size=subtitle_label.setter('text_size'))
+
+        header.add_widget(accent_bar)
+        header.add_widget(title_label)
+        header.add_widget(subtitle_label)
+
+        # ---- 输入区卡片 ----
+        input_card = CardBox(
+            orientation='vertical',
+            size_hint_y=None,
+            height=130,
+            padding=[16, 14, 16, 14],
             spacing=10
         )
-        icon_label = Label(
-            text='📖',
-            font_size='26sp',
-            size_hint_x=None, width=44,
-            bold=True,
-            color=COLOR_TITLE
-        )
-        title_box.add_widget(icon_label)
 
-        title_text_box = BoxLayout(orientation='vertical', spacing=0)
-        title_text_box.add_widget(Label(
-            text='s丶ky书包',
-            font_size='20sp',
-            bold=True,
-            color=COLOR_TITLE,
-            halign='left', valign='bottom',
-            size_hint_y=0.6
-        ))
-        title_text_box.add_widget(Label(
-            text='桀桀桀',
-            font_size='12sp',
-            color=COLOR_SUBTLE,
-            halign='left', valign='top',
-            size_hint_y=0.4
-        ))
-        title_box.add_widget(title_text_box)
-        self.add_widget(title_box)
-
-        # ---------- 细分隔线 ----------
-        sep = Widget(size_hint_y=None, height=1)
-        with sep.canvas:
-            Color(*COLOR_SEPARATOR)
-            Rectangle(pos=sep.pos, size=sep.size)
-        sep.bind(pos=lambda s, v: s.canvas.children[-1].__setattr__('pos', v),
-                 size=lambda s, v: s.canvas.children[-1].__setattr__('size', v))
-        self.add_widget(sep)
-
-        # ---------- 输入区域 ----------
-        input_box = BoxLayout(
-            orientation='horizontal',
-            size_hint_y=None, height=52,
-            spacing=10
+        input_label = Label(
+            text='Book ID',
+            font_size='13sp',
+            color=TEXT_GRAY,
+            size_hint_y=None,
+            height=20,
+            halign='left',
+            valign='middle'
         )
-        self.book_id_input = RoundedTextInput(
-            hint_text='请输入 book id...',
-            multiline=False,
-            size_hint_x=0.68
+        input_label.bind(size=input_label.setter('text_size'))
+
+        self.book_id_input = RoundedInput(
+            hint_text='请输入 Book ID ...'
         )
-        input_box.add_widget(self.book_id_input)
 
         self.download_btn = RoundedButton(
-            text='开始下载',
-            size_hint_x=0.32,
-            font_size='16sp'
+            text='🚀  开始下载',
+            btn_color=ACCENT,
+            btn_color_press=ACCENT_PRESS
         )
         self.download_btn.bind(on_press=self.start_download)
-        input_box.add_widget(self.download_btn)
-        self.add_widget(input_box)
 
-        # ---------- 状态提示 ----------
-        self.status_label = Label(
-            text='● 等待输入',
-            font_size='13sp',
-            color=COLOR_SUBTLE,
-            size_hint_y=None, height=28,
-            halign='left', valign='middle'
-        )
-        self.add_widget(self.status_label)
+        input_card.add_widget(input_label)
+        input_card.add_widget(self.book_id_input)
+        input_card.add_widget(self.download_btn)
 
-        # ---------- 输出区域（外层容器控制内边距） ----------
-        output_container = BoxLayout(
+        # ---- 输出日志区 ----
+        output_card = CardBox(
             orientation='vertical',
-            padding=[14, 10, 14, 10],  # 内边距在这里控制，不在 Label 上
-            size_hint=(1, 1)
+            padding=[14, 12, 14, 12],
+            spacing=6,
+            card_color=SCROLL_BG
         )
-        self.output_label = Label(
-            text='',
+
+        output_header = BoxLayout(
             size_hint_y=None,
-            halign='left', valign='top',
-            color=COLOR_BODY,
+            height=28,
+            spacing=8
+        )
+
+        output_icon = Label(
+            text='📄',
+            font_size='16sp',
+            size_hint_x=None,
+            width=30,
+            halign='center'
+        )
+        output_icon.bind(size=output_icon.setter('text_size'))
+
+        output_title = Label(
+            text='下载日志',
             font_size='14sp',
-            markup=False
+            color=TEXT_GRAY,
+            bold=True,
+            halign='left',
+            valign='middle'
         )
-        # ✅ 关键修复：高度直接等于纹理高度，不再额外加值
-        self.output_label.bind(
-            texture_size=lambda instance, value:
-            setattr(instance, 'height', instance.texture_size[1])
+        output_title.bind(size=output_title.setter('text_size'))
+
+        self.status_label = Label(
+            text='就绪',
+            font_size='12sp',
+            color=SUCCESS,
+            size_hint_x=None,
+            width=60,
+            halign='right',
+            valign='middle'
+        )
+        self.status_label.bind(size=self.status_label.setter('text_size'))
+
+        output_header.add_widget(output_icon)
+        output_header.add_widget(output_title)
+        output_header.add_widget(Widget())  # spacer
+        output_header.add_widget(self.status_label)
+
+        # 分隔线
+        divider = Widget(size_hint_y=None, height=1)
+        with divider.canvas:
+            Color(*DIVIDER)
+            self._divider_line = Rectangle(pos=divider.pos, size=(divider.width, 1))
+        divider.bind(
+            pos=lambda w, *a: setattr(self._divider_line, 'pos', w.pos),
+            size=lambda w, *a: setattr(self._divider_line, 'size', (w.width, 1))
         )
 
-        self.scroll_view = StyledScrollView(size_hint=(1, 1))
-        output_container.add_widget(self.output_label)
-        self.scroll_view.add_widget(output_container)
-        self.add_widget(self.scroll_view)
-
-        # ---------- 底部版本信息 ----------
-        version_label = Label(
-            text='fq v1.2.5  ·  powered by oiapi',
-            font_size='10sp',
-            color=COLOR_SUBTLE[:3] + (0.55,),
-            size_hint_y=None, height=22,
-            halign='center', valign='middle'
+        self.output_label = OutputLabel(
+            text='[color=9999aa]欢迎使用 fq 小说下载器[/color]\n[color=666688]输入 Book ID 后点击"开始下载"[/color]',
+            size_hint_y=None,
+            height=200
         )
-        self.add_widget(version_label)
 
-    def _update_main_bg(self, *args):
-        self._main_bg.pos = self.pos
-        self._main_bg.size = self.size
+        self.scroll_view = ScrollView(
+            size_hint=(1, 1),
+            bar_color=(*ACCENT[:3], 0.4),
+            bar_inactive_color=(*ACCENT[:3], 0.15),
+            bar_width=4
+        )
+        self.scroll_view.add_widget(self.output_label)
 
-    # ========== 线程安全 + 高度计算修复 ==========
+        output_card.add_widget(output_header)
+        output_card.add_widget(divider)
+        output_card.add_widget(self.scroll_view)
+
+        # ---- 组装主布局 ----
+        main_layout.add_widget(header)
+        main_layout.add_widget(input_card)
+        main_layout.add_widget(output_card)
+
+        self.add_widget(main_layout)
+        self._update_event = None
+
+    def _update_canvas(self, *args):
+        self._bg.pos = self.pos
+        self._bg.size = self.size
+
+    def _update_bar(self, widget):
+        widget.canvas.clear()
+        with widget.canvas:
+            Color(*ACCENT)
+            RoundedRectangle(
+                pos=widget.pos,
+                size=(min(widget.width, 60), 3),
+                radius=[2]
+            )
 
     def start_download(self, instance):
         book_id = self.book_id_input.text.strip()
         if not book_id:
-            self._append_output("⚠️ 请输入有效的 book id\n")
-            self.status_label.text = '⚠️ 请输入有效的 book id'
-            self.status_label.color = COLOR_ERROR
+            self._append_output("[color=e94545]⚠ 请输入有效的 Book ID[/color]\n")
             return
-
-        # ✅ 在主线程中提前获取下载目录，避免后台线程调用 jnius 崩溃
-        try:
-            output_dir = get_download_dir()
-            if not output_dir or not isinstance(output_dir, str):
-                raise ValueError("下载路径无效")
-        except Exception as e:
-            self._append_output(f"❌ 获取存储路径失败: {e}\n")
-            self.status_label.text = '❌ 存储路径不可用'
-            self.status_label.color = COLOR_ERROR
-            return
-
         self.download_btn.disabled = True
-        self.status_label.text = '⏳ 正在获取书籍信息...'
-        self.status_label.color = COLOR_PRIMARY
-        self._append_output("正在获取书籍信息...\n")
-
-        # 将预先获取的路径传入后台线程
-        threading.Thread(
-            target=self._download_novel,
-            args=(book_id, output_dir),
-            daemon=True
-        ).start()
+        self.download_btn.text = '⏳  下载中...'
+        self.status_label.text = '下载中'
+        self.status_label.color = ACCENT
+        self._set_output('[color=9999aa]正在获取书籍信息...[/color]\n')
+        threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
 
     def _append_output(self, text):
-        """线程安全地将文本追加到输出标签"""
         def _update(dt):
-            if not text:
-                return
             self.output_label.text += text
             self.output_label.texture_update()
-            # ✅ 关键修复：直接使用纹理高度，不额外加值
-            self.output_label.height = self.output_label.texture_size[1]
+            self.output_label.height = max(self.output_label.texture_size[1], 100)
             self.scroll_view.scroll_y = 0
         Clock.schedule_once(_update, 0)
 
     def _set_output(self, text):
-        """线程安全地设置输出标签文本"""
         def _update(dt):
-            self.output_label.text = text or ''
+            self.output_label.text = text
+            self.output_label.texture_update()
+            self.output_label.height = max(self.output_label.texture_size[1], 100)
         Clock.schedule_once(_update, 0)
 
-    def _download_novel(self, book_id, output_dir):
-        """
-        后台下载逻辑。
-        参数 output_dir 已由主线程提前获取。
-        """
+    def _download_novel(self, book_id):
         try:
             info = get_book_info(book_id)
             title = info['title']
             author = info['author']
             intro = info.get('docs', '').replace('\n', ' ')
-            self._append_output(f"书名: {title}\n作者: {author}\n简介: {intro[:100]}...\n")
+
+            self._append_output(
+                f"[color=4da6e8]📖 书名:[/color] [b]{title}[/b]\n"
+                f"[color=4da6e8]✍ 作者:[/color] {author}\n"
+                f"[color=4da6e8]📝 简介:[/color] {intro[:80]}...\n"
+                f"[color=333355]─────────────────────────[/color]\n"
+            )
 
             chapters_data = get_chapter_list(book_id)
             chapters = []
@@ -453,12 +468,14 @@ class NovelDownloader(BoxLayout):
                     chapters.append(vol)
 
             total = len(chapters)
-            self._append_output(f"共 {total} 章，开始下载...\n")
+            self._append_output(f"[color=4da6e8]📚 共 {total} 章，开始下载...[/color]\n")
 
             safe_title = clean_filename(title)
+            output_dir = get_download_dir()
             os.makedirs(output_dir, exist_ok=True)
             output_file = os.path.join(output_dir, f"{safe_title}.txt")
-            self._append_output(f"保存路径: {output_dir}\n")
+
+            self._append_output(f"[color=666688]💾 保存路径: {output_dir}[/color]\n")
 
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"{title}\n作者: {author}\n简介:\n{intro}\n\n")
@@ -469,7 +486,7 @@ class NovelDownloader(BoxLayout):
                     try:
                         batch = get_chapter_contents_batch(book_id, start, end)
                     except Exception as e:
-                        self._append_output(f"批量 {start}-{end} 失败: {e}\n")
+                        self._append_output(f"[color=e94545]✗ 批量 {start}-{end} 失败: {e}[/color]\n")
                         continue
 
                     chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
@@ -478,7 +495,15 @@ class NovelDownloader(BoxLayout):
                         orig = next((ch for ch in chapters if ch.get('index') == idx), None)
                         chap_title = orig['title'] if orig else info.get('chapter_title', f'第{idx}章')
                         percent = (idx / total) * 100
-                        self._set_output(f"[{percent:.1f}%] 正在下载 {idx}/{total}")
+
+                        def _upd(dt, p=percent, i=idx, t=total):
+                            self._set_output(
+                                f"[color=4da6e8]⬇ 下载进度[/color]  "
+                                f"[b][color=4de8a2]{p:.1f}%[/color][/b]\n"
+                                f"[color=888899]正在处理: {i}/{t}[/color]"
+                            )
+
+                        Clock.schedule_once(_upd, 0)
 
                         if info:
                             content = clean_content(info.get('content', ''))
@@ -488,36 +513,36 @@ class NovelDownloader(BoxLayout):
                         else:
                             f.write(f"{chap_title}\n[内容缺失]\n\n")
 
-            self._append_output(f"\n✅ 下载完成！\n📁 文件: {output_file}\n")
-            Clock.schedule_once(lambda dt: setattr(self.status_label, 'text', '✅ 下载完成！'), 0)
-            Clock.schedule_once(lambda dt: setattr(self.status_label, 'color', COLOR_SUCCESS), 0)
+                self._append_output(
+                    f"\n[color=33e87a]✅ 下载完成！[/color]\n"
+                    f"[color=666688]📁 文件: {output_file}[/color]\n"
+                )
         except Exception as e:
-            self._append_output(f"\n❌ 下载失败: {str(e)}\n")
-            Clock.schedule_once(lambda dt: setattr(self.status_label, 'text', '❌ 下载失败'), 0)
-            Clock.schedule_once(lambda dt: setattr(self.status_label, 'color', COLOR_ERROR), 0)
+            self._append_output(f"[color=e94545]✗ 下载失败: {str(e)}[/color]\n")
         finally:
             def enable_btn(dt):
                 self.download_btn.disabled = False
+                self.download_btn.text = '🚀  开始下载'
+                self.status_label.text = '就绪'
+                self.status_label.color = SUCCESS
             Clock.schedule_once(enable_btn, 0)
 
 
-# ============================================================
-# App 入口
-# ============================================================
-
 class TomatoNovelApp(App):
     def build(self):
-        Window.clearcolor = COLOR_BG
-
+        # 注册中文字体
         try:
             LabelBase.register(name='Roboto', fn_regular='font.ttf')
         except:
             pass
 
+        # 设置窗口背景色
+        Window.clearcolor = BG_PRIMARY
+
+        # Android平台请求权限
         if platform == 'android':
             try:
                 from android.permissions import request_permissions, Permission
-
                 permissions_needed = [
                     Permission.WRITE_EXTERNAL_STORAGE,
                     Permission.READ_EXTERNAL_STORAGE
@@ -530,7 +555,6 @@ class TomatoNovelApp(App):
                     ])
                 except:
                     pass
-
                 request_permissions(permissions_needed)
             except Exception as e:
                 print(f"权限请求失败: {e}")
