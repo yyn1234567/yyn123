@@ -156,7 +156,7 @@ class NovelDownloader(MDScreen):
         )
 
         title_label = MDLabel(
-            text='[b]小说下载器[/b]',
+            text='[b]s丶ky书包[/b]',
             font_style='H6',
             theme_text_color='Custom',
             text_color=TEXT_WHITE,
@@ -168,7 +168,7 @@ class NovelDownloader(MDScreen):
         title_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
         subtitle_label = MDLabel(
-            text='v1.2.7  ·  输入 Book ID 即可开始下载',
+            text='v1.3.0 | 桀桀桀桀桀',
             font_style='Caption',
             theme_text_color='Custom',
             text_color=TEXT_GRAY,
@@ -196,7 +196,7 @@ class NovelDownloader(MDScreen):
         )
 
         input_hint = MDLabel(
-            text='Book ID',
+            text='请输入book id',
             font_style='Caption',
             theme_text_color='Custom',
             text_color=TEXT_GRAY,
@@ -207,7 +207,7 @@ class NovelDownloader(MDScreen):
         input_hint.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
         self.book_id_input = MDTextField(
-            hint_text='请输入 Book ID ...',
+            hint_text='book id',
             mode='round',
             size_hint_y=None,
             height=dp(48)
@@ -246,7 +246,7 @@ class NovelDownloader(MDScreen):
         )
 
         log_title = MDLabel(
-            text='下载日志',
+            text='输出',
             font_style='Subtitle2',
             theme_text_color='Custom',
             text_color=TEXT_GRAY,
@@ -280,8 +280,7 @@ class NovelDownloader(MDScreen):
 
         # 输出文本标签
         self.output_label = MDLabel(
-            text='[color=9999aa]欢迎使用小说下载器[/color]\n'
-                 '[color=666688]输入 Book ID 后点击「开始下载」[/color]',
+            text = '[color=666688]book id获取方法：\n1.点击小说界面右上角分享，选择复制链接\n2.在浏览器打开该链接，然后复制加载后的地址\n3.地址前几行book id=后的数字即为该书id[/color]',
             font_style='Body2',
             theme_text_color='Custom',
             text_color=TEXT_WHITE,
@@ -320,7 +319,7 @@ class NovelDownloader(MDScreen):
     def start_download(self, instance):
         book_id = self.book_id_input.text.strip()
         if not book_id:
-            self._append_output("[color=e94545]请输入有效的 Book ID[/color]\n")
+            self._append_output("[color=e94545]请输入有效的book id[/color]\n")
             return
         self.download_btn.disabled = True
         self.download_btn.text = '下载中...'
