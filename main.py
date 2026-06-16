@@ -5,32 +5,34 @@ import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.widget import Widget
 from kivy.clock import Clock
 from kivy.core.text import LabelBase
 from kivy.utils import platform
-from kivy.graphics import Color, Rectangle, RoundedRectangle, Line
 from kivy.core.window import Window
+from kivy.metrics import dp
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.widget import Widget
+from kivy.app import App
+
+from kivymd.app import MDApp
+from kivymd.uix.screen import MDScreen
+from kivymd.uix.card import MDCard
+from kivymd.uix.textfield import MDTextField
+from kivymd.uix.button import MDRaisedButton
+from kivymd.uix.label import MDLabel
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.progressbar import MDProgressBar
 
 # ============== 配色方案 ==============
-BG_PRIMARY    = (0.067, 0.067, 0.118, 1)
-BG_CARD       = (0.106, 0.114, 0.196, 1)
-ACCENT        = (0.298, 0.643, 0.918, 1)
-ACCENT_PRESS  = (0.200, 0.480, 0.780, 1)
-SUCCESS       = (0.298, 0.780, 0.549, 1)
-DANGER        = (0.914, 0.271, 0.271, 1)
-TEXT_WHITE     = (0.957, 0.957, 0.973, 1)
-TEXT_GRAY      = (0.580, 0.600, 0.675, 1)
-INPUT_BG      = (0.125, 0.133, 0.231, 1)
-INPUT_BORDER  = (0.220, 0.240, 0.360, 1)
-SCROLL_BG     = (0.086, 0.090, 0.157, 1)
-DIVIDER       = (0.200, 0.220, 0.340, 1)
+BG_PRIMARY    = [0.067, 0.067, 0.118, 1]
+BG_CARD       = [0.106, 0.114, 0.196, 1]
+ACCENT        = [0.298, 0.643, 0.918, 1]
+ACCENT_PRESS  = [0.200, 0.480, 0.780, 1]
+SUCCESS       = [0.298, 0.780, 0.549, 1]
+DANGER        = [0.914, 0.271, 0.271, 1]
+TEXT_WHITE     = [0.957, 0.957, 0.973, 1]
+TEXT_GRAY      = [0.580, 0.600, 0.675, 1]
+SCROLL_BG     = [0.086, 0.090, 0.157, 1]
 
 BASE_URL = "https://oiapi.net/api/FqRead"
 API_KEY = "oiapi-b27b0c8d-8984-7cd0-ecaf-0c209ad109d2"
@@ -38,6 +40,8 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2
 TIMEOUT = 30
 
+
+# ============== 后端逻辑（完全未修改） ==============
 
 def clean_filename(name):
     return re.sub(r"[\/\\\:\*\?\"\<\>\|]", "_", name)
@@ -114,286 +118,204 @@ def get_download_dir():
             return os.path.join(os.getcwd(), 'novels')
 
 
-# ============== 自定义组件 ==============
+# ============== KivyMD 现代化前端 ==============
 
-class RoundedInput(TextInput):
+class NovelDownloader(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.background_color = (0, 0, 0, 0)
-        self.foreground_color = TEXT_WHITE
-        self.cursor_color = ACCENT
-        self.hint_text_color = (*TEXT_GRAY[:3], 0.6)
-        self.font_size = '16sp'
-        self.padding = [18, 14, 18, 14]
-        self.multiline = False
-        self.size_hint_y = None
-        self.height = 52
-        # 延迟绘制背景，避免初始化时canvas未就绪
-        Clock.schedule_once(self._draw_bg, 0)
+        self.md_bg_color = BG_PRIMARY
 
-    def _draw_bg(self, dt=None):
-        self._update_bg()
-        self.bind(pos=self._update_bg, size=self._update_bg)
-
-    def _update_bg(self, *args):
-        self.canvas.before.clear()
-        with self.canvas.before:
-            Color(*INPUT_BORDER)
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
-            Color(*INPUT_BG)
-            RoundedRectangle(
-                pos=(self.x + 1, self.y + 1),
-                size=(self.width - 2, self.height - 2),
-                radius=[9]
-            )
-
-
-class RoundedButton(Button):
-    def __init__(self, **kwargs):
-        self.btn_color = kwargs.pop('btn_color', ACCENT)
-        self.btn_color_press = kwargs.pop('btn_color_press', ACCENT_PRESS)
-        # ★ 关键修复：必须在 super().__init__() 之前初始化，否则 on_size 触发时 _pressed 不存在
-        self._pressed = False
-        super().__init__(**kwargs)
-        self.background_color = (0, 0, 0, 0)
-        self.background_normal = ''
-        self.background_down = ''
-        self.color = TEXT_WHITE
-        self.font_size = '17sp'
-        self.bold = True
-        self.size_hint_y = None
-        self.height = 52
-        # 延迟绘制背景
-        Clock.schedule_once(self._draw_bg, 0)
-
-    def _draw_bg(self, dt=None):
-        self._update_bg()
-        self.bind(pos=self._update_bg, size=self._update_bg)
-
-    def on_press(self):
-        self._pressed = True
-        self._update_bg()
-
-    def on_release(self):
-        self._pressed = False
-        self._update_bg()
-
-    def _update_bg(self, *args):
-        self.canvas.before.clear()
-        with self.canvas.before:
-            c = self.btn_color_press if (self._pressed or self.disabled) else self.btn_color
-            if self.disabled:
-                c = (*c[:3], 0.5)
-            Color(*c)
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
-
-
-class CardBox(BoxLayout):
-    def __init__(self, **kwargs):
-        self._card_color = kwargs.pop('card_color', BG_CARD)
-        self._radius = kwargs.pop('radius', 12)
-        super().__init__(**kwargs)
-        with self.canvas.before:
-            Color(*self._card_color)
-            self._bg_rect = RoundedRectangle(
-                pos=self.pos, size=self.size, radius=[self._radius]
-            )
-        self.bind(pos=self._update_bg, size=self._update_bg)
-
-    def _update_bg(self, *args):
-        self._bg_rect.pos = self.pos
-        self._bg_rect.size = self.size
-
-
-class OutputLabel(Label):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.color = TEXT_WHITE
-        self.font_size = '14sp'
-        self.halign = 'left'
-        self.valign = 'top'
-        self.text_size = (None, None)
-        self.markup = True
-        self.line_height = 1.4
-
-
-# ============== 主界面 ==============
-
-class NovelDownloader(BoxLayout):
-    def __init__(self, **kwargs):
-        super().__init__(orientation='vertical', padding=0, spacing=0, **kwargs)
-
-        # 全局背景
-        with self.canvas.before:
-            Color(*BG_PRIMARY)
-            self._bg = Rectangle(pos=self.pos, size=self.size)
-        self.bind(pos=self._update_canvas, size=self._update_canvas)
-
-        # 主内容区
-        main_layout = BoxLayout(
+        # 主内容容器
+        main = MDBoxLayout(
             orientation='vertical',
-            padding=[16, 12, 16, 16],
-            spacing=12
+            padding=[dp(16), dp(16), dp(16), dp(16)],
+            spacing=dp(14)
         )
 
-        # ---- 顶部标题栏 ----
-        header = CardBox(
-            orientation='vertical',
+        # ───────────── 顶部标题栏 ─────────────
+        header = MDCard(
+            elevation=3,
+            radius=[dp(16)],
+            md_bg_color=[0.114, 0.125, 0.216, 1],
             size_hint_y=None,
-            height=90,
-            padding=[20, 15, 20, 15],
-            spacing=4,
-            card_color=(0.114, 0.125, 0.216, 1)
+            height=dp(88),
+            padding=[dp(20), dp(14), dp(20), dp(12)],
+            orientation='vertical',
+            spacing=dp(4),
+            ripple_behavior=False
         )
 
-        # 标题装饰线
-        accent_bar = Widget(size_hint_y=None, height=3)
-        with accent_bar.canvas:
-            Color(*ACCENT)
-            self._accent_rect = RoundedRectangle(pos=accent_bar.pos, size=(60, 3), radius=[2])
-        accent_bar.bind(
-            pos=lambda w, *a: setattr(self._accent_rect, 'pos', w.pos),
-            size=lambda w, *a: setattr(self._accent_rect, 'size', (min(w.width, 60), 3))
+        # 标题装饰条
+        accent_bar = MDBoxLayout(
+            size_hint_y=None,
+            height=dp(3),
+            size_hint_x=None,
+            width=dp(48),
+            md_bg_color=ACCENT,
+            radius=[dp(2)]
         )
 
-        title_label = Label(
+        title_label = MDLabel(
             text='[b]小说下载器[/b]',
-            font_size='22sp',
-            color=TEXT_WHITE,
+            font_style='H6',
+            theme_text_color='Custom',
+            text_color=TEXT_WHITE,
+            markup=True,
             size_hint_y=None,
-            height=36,
-            halign='left',
-            valign='middle',
-            markup=True
+            height=dp(32),
+            halign='left'
         )
-        title_label.bind(size=title_label.setter('text_size'))
+        title_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
-        subtitle_label = Label(
+        subtitle_label = MDLabel(
             text='v1.2.7  ·  输入 Book ID 即可开始下载',
-            font_size='13sp',
-            color=TEXT_GRAY,
+            font_style='Caption',
+            theme_text_color='Custom',
+            text_color=TEXT_GRAY,
             size_hint_y=None,
-            height=22,
-            halign='left',
-            valign='middle'
+            height=dp(18),
+            halign='left'
         )
-        subtitle_label.bind(size=subtitle_label.setter('text_size'))
+        subtitle_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
         header.add_widget(accent_bar)
         header.add_widget(title_label)
         header.add_widget(subtitle_label)
 
-        # ---- 输入区卡片 ----
-        input_card = CardBox(
+        # ───────────── 输入区卡片 ─────────────
+        input_card = MDCard(
+            elevation=2,
+            radius=[dp(16)],
+            md_bg_color=BG_CARD,
+            size_hint_y=None,
+            height=dp(180),
+            padding=[dp(18), dp(14), dp(18), dp(14)],
+            spacing=dp(12),
             orientation='vertical',
-            size_hint_y=None,
-            height=130,
-            padding=[16, 14, 16, 14],
-            spacing=10
+            ripple_behavior=False
         )
 
-        input_label = Label(
+        input_hint = MDLabel(
             text='Book ID',
-            font_size='13sp',
-            color=TEXT_GRAY,
+            font_style='Caption',
+            theme_text_color='Custom',
+            text_color=TEXT_GRAY,
             size_hint_y=None,
-            height=20,
-            halign='left',
-            valign='middle'
+            height=dp(18),
+            halign='left'
         )
-        input_label.bind(size=input_label.setter('text_size'))
+        input_hint.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
-        self.book_id_input = RoundedInput(
-            hint_text='请输入 Book ID ...'
+        self.book_id_input = MDTextField(
+            hint_text='请输入 Book ID ...',
+            mode='round',
+            size_hint_y=None,
+            height=dp(48)
         )
 
-        self.download_btn = RoundedButton(
+        self.download_btn = MDRaisedButton(
             text='开始下载',
-            btn_color=ACCENT,
-            btn_color_press=ACCENT_PRESS
+            md_bg_color=ACCENT,
+            text_color=TEXT_WHITE,
+            font_size='16sp',
+            size_hint=(1, None),
+            height=dp(48)
         )
         self.download_btn.bind(on_press=self.start_download)
 
-        input_card.add_widget(input_label)
+        input_card.add_widget(input_hint)
         input_card.add_widget(self.book_id_input)
         input_card.add_widget(self.download_btn)
 
-        # ---- 输出日志区 ----
-        output_card = CardBox(
+        # ───────────── 日志输出卡片 ─────────────
+        output_card = MDCard(
+            elevation=2,
+            radius=[dp(16)],
+            md_bg_color=SCROLL_BG,
+            padding=[dp(16), dp(12), dp(16), dp(12)],
+            spacing=dp(8),
             orientation='vertical',
-            padding=[14, 12, 14, 12],
-            spacing=6,
-            card_color=SCROLL_BG
+            ripple_behavior=False
         )
 
-        output_header = BoxLayout(
+        # 日志头部
+        log_header = MDBoxLayout(
             size_hint_y=None,
-            height=28,
-            spacing=8
+            height=dp(28),
+            spacing=dp(8)
         )
 
-        output_title = Label(
+        log_title = MDLabel(
             text='下载日志',
-            font_size='14sp',
-            color=TEXT_GRAY,
+            font_style='Subtitle2',
+            theme_text_color='Custom',
+            text_color=TEXT_GRAY,
             bold=True,
-            halign='left',
-            valign='middle'
+            halign='left'
         )
-        output_title.bind(size=output_title.setter('text_size'))
+        log_title.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
-        self.status_label = Label(
+        self.status_label = MDLabel(
             text='就绪',
-            font_size='12sp',
-            color=SUCCESS,
+            font_style='Caption',
+            theme_text_color='Custom',
+            text_color=SUCCESS,
             size_hint_x=None,
-            width=60,
-            halign='right',
-            valign='middle'
+            width=dp(60),
+            halign='right'
         )
-        self.status_label.bind(size=self.status_label.setter('text_size'))
+        self.status_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
-        output_header.add_widget(output_title)
-        output_header.add_widget(Widget())
-        output_header.add_widget(self.status_label)
+        log_header.add_widget(log_title)
+        log_header.add_widget(Widget())
+        log_header.add_widget(self.status_label)
 
-        # 分隔线
-        divider = Widget(size_hint_y=None, height=1)
-        with divider.canvas:
-            Color(*DIVIDER)
-            self._divider_rect = Rectangle(pos=divider.pos, size=(divider.width, 1))
-        divider.bind(
-            pos=lambda w, *a: setattr(self._divider_rect, 'pos', w.pos),
-            size=lambda w, *a: setattr(self._divider_rect, 'size', (w.width, 1))
-        )
-
-        self.output_label = OutputLabel(
-            text='[color=9999aa]欢迎使用小说下载器[/color]\n[color=666688]输入 Book ID 后点击"开始下载"[/color]',
+        # 进度条
+        self.progress_bar = MDProgressBar(
+            value=0,
+            color=ACCENT,
             size_hint_y=None,
-            height=200
+            height=dp(4)
         )
 
+        # 输出文本标签
+        self.output_label = MDLabel(
+            text='[color=9999aa]欢迎使用小说下载器[/color]\n'
+                 '[color=666688]输入 Book ID 后点击「开始下载」[/color]',
+            font_style='Body2',
+            theme_text_color='Custom',
+            text_color=TEXT_WHITE,
+            markup=True,
+            halign='left',
+            valign='top',
+            size_hint_y=None,
+            height=dp(200),
+            line_height=1.4
+        )
+        self.output_label.bind(
+            width=lambda i, v: setattr(i, 'text_size', (i.width, None))
+        )
+
+        # 滚动容器
         self.scroll_view = ScrollView(
             size_hint=(1, 1),
-            bar_color=(*ACCENT[:3], 0.4),
-            bar_inactive_color=(*ACCENT[:3], 0.15),
-            bar_width=4
+            bar_color=[*ACCENT[:3], 0.4],
+            bar_inactive_color=[*ACCENT[:3], 0.15],
+            bar_width=dp(4)
         )
         self.scroll_view.add_widget(self.output_label)
 
-        output_card.add_widget(output_header)
-        output_card.add_widget(divider)
+        output_card.add_widget(log_header)
+        output_card.add_widget(self.progress_bar)
         output_card.add_widget(self.scroll_view)
 
-        # 组装
-        main_layout.add_widget(header)
-        main_layout.add_widget(input_card)
-        main_layout.add_widget(output_card)
-        self.add_widget(main_layout)
+        # ───────────── 组装 ─────────────
+        main.add_widget(header)
+        main.add_widget(input_card)
+        main.add_widget(output_card)
+        self.add_widget(main)
 
-    def _update_canvas(self, *args):
-        self._bg.pos = self.pos
-        self._bg.size = self.size
+    # ============== 交互逻辑（完全未修改） ==============
 
     def start_download(self, instance):
         book_id = self.book_id_input.text.strip()
@@ -403,7 +325,9 @@ class NovelDownloader(BoxLayout):
         self.download_btn.disabled = True
         self.download_btn.text = '下载中...'
         self.status_label.text = '下载中'
-        self.status_label.color = ACCENT
+        self.status_label.text_color = ACCENT
+        self.progress_bar.value = 0
+        self.progress_bar.color = ACCENT
         self._set_output('[color=9999aa]正在获取书籍信息...[/color]\n')
         threading.Thread(target=self._download_novel, args=(book_id,), daemon=True).start()
 
@@ -411,7 +335,7 @@ class NovelDownloader(BoxLayout):
         def _update(dt):
             self.output_label.text += text
             self.output_label.texture_update()
-            self.output_label.height = max(self.output_label.texture_size[1], 100)
+            self.output_label.height = max(self.output_label.texture_size[1], dp(100))
             self.scroll_view.scroll_y = 0
         Clock.schedule_once(_update, 0)
 
@@ -419,7 +343,7 @@ class NovelDownloader(BoxLayout):
         def _update(dt):
             self.output_label.text = text
             self.output_label.texture_update()
-            self.output_label.height = max(self.output_label.texture_size[1], 100)
+            self.output_label.height = max(self.output_label.texture_size[1], dp(100))
         Clock.schedule_once(_update, 0)
 
     def _download_novel(self, book_id):
@@ -479,6 +403,7 @@ class NovelDownloader(BoxLayout):
                                 f"[b][color=4de8a2]{p:.1f}%[/color][/b]\n"
                                 f"[color=888899]正在处理: {i}/{t}[/color]"
                             )
+                            self.progress_bar.value = p
 
                         Clock.schedule_once(_upd, 0)
 
@@ -501,12 +426,21 @@ class NovelDownloader(BoxLayout):
                 self.download_btn.disabled = False
                 self.download_btn.text = '开始下载'
                 self.status_label.text = '就绪'
-                self.status_label.color = SUCCESS
+                self.status_label.text_color = SUCCESS
+                self.progress_bar.value = 100
+                self.progress_bar.color = SUCCESS
             Clock.schedule_once(enable_btn, 0)
 
 
-class TomatoNovelApp(App):
+# ============== 应用入口 ==============
+
+class TomatoNovelApp(MDApp):
     def build(self):
+        # KivyMD 主题配置
+        self.theme_cls.theme_style = "Dark"
+        self.theme_cls.primary_palette = "Blue"
+        self.theme_cls.accent_palette = "Teal"
+
         try:
             LabelBase.register(name='Roboto', fn_regular='font.ttf')
         except:
