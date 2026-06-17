@@ -168,7 +168,7 @@ class NovelDownloader(MDScreen):
         title_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
         subtitle_label = MDLabel(
-            text='v1.3.0 | 桀桀桀桀桀',
+            text='v1.3.1 | 桀桀桀桀桀',
             font_style='Caption',
             theme_text_color='Custom',
             text_color=TEXT_GRAY,
