@@ -168,7 +168,7 @@ class NovelDownloader(MDScreen):
         title_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
         subtitle_label = MDLabel(
-            text='v1.3.1 | 桀桀桀桀桀',
+            text='v1.3.2 | 桀桀桀桀桀',
             font_style='Caption',
             theme_text_color='Custom',
             text_color=TEXT_GRAY,
@@ -440,7 +440,7 @@ class TomatoNovelApp(MDApp):
         self.theme_cls.primary_palette = "Blue"
         self.theme_cls.accent_palette = "Teal"
 
-        # ✅ 修复：注册所有字体变体为支持中文的 font.ttf
+        # ✅ 注册支持中文的字体覆盖默认 Roboto
         try:
             LabelBase.register(
                 name='Roboto',
@@ -452,6 +452,24 @@ class TomatoNovelApp(MDApp):
             print("✅ 自定义字体注册成功")
         except Exception as e:
             print(f"⚠️ 字体注册失败: {e}")
+
+        # ✅ 修复：将所有 KivyMD 主题字体样式统一指向 'Roboto'
+        # 原因：H6/Subtitle2 等样式默认使用 RobotoMedium（即 Roboto-Medium.ttf），
+        #       该字体名未被注册为中文字体，导致中文显示为方块。
+        #       将所有样式统一为 'Roboto' 即可使用我们注册的中文字体。
+        try:
+            new_styles = {}
+            for style_name, style_value in self.theme_cls.font_styles.items():
+                if isinstance(style_value, (list, tuple)):
+                    new_style = list(style_value)
+                    new_style[0] = 'Roboto'  # 统一使用已注册的中文字体名
+                    new_styles[style_name] = new_style
+                else:
+                    new_styles[style_name] = style_value
+            self.theme_cls.font_styles = new_styles
+            print("✅ 主题字体样式已统一为 Roboto")
+        except Exception as e:
+            print(f"⚠️ 字体样式覆盖失败: {e}")
 
         Window.clearcolor = BG_PRIMARY
 
