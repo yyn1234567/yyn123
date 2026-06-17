@@ -440,10 +440,18 @@ class TomatoNovelApp(MDApp):
         self.theme_cls.primary_palette = "Blue"
         self.theme_cls.accent_palette = "Teal"
 
+        # ✅ 修复：注册所有字体变体为支持中文的 font.ttf
         try:
-            LabelBase.register(name='Roboto', fn_regular='font.ttf')
-        except:
-            pass
+            LabelBase.register(
+                name='Roboto',
+                fn_regular='font.ttf',
+                fn_bold='font.ttf',
+                fn_italic='font.ttf',
+                fn_bolditalic='font.ttf'
+            )
+            print("✅ 自定义字体注册成功")
+        except Exception as e:
+            print(f"⚠️ 字体注册失败: {e}")
 
         Window.clearcolor = BG_PRIMARY
 
