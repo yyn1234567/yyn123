@@ -41,7 +41,7 @@ RETRY_DELAY = 2
 TIMEOUT = 30
 
 
-# ============== 后端逻辑（完全未修改） ==============
+# ============== 后端逻辑 ==============
 
 def clean_filename(name):
     return re.sub(r"[\/\\\:\*\?\"\<\>\|]", "_", name)
@@ -79,7 +79,7 @@ def get_chapter_contents_batch(book_id, start, end):
     result = api_request(f"method=chapter&id={book_id}&chapter={start}-{end}")
     if result.get('code') == 1:
         return result['data']
-    raise Exception(f"批量获取章节失败: {result.get('message', '未知错误')}")
+    raise Exception(f"批量获取章节失败: {str(e)}")
 
 
 def clean_content(content):
@@ -90,32 +90,99 @@ def clean_content(content):
 
 
 def get_download_dir():
+    """获取下载目录，兼容Android 11+ scoped storage"""
     try:
         if platform == 'android':
             from jnius import autoclass
             Environment = autoclass('android.os.Environment')
-            from android.permissions import check_permission, Permission
+            Build = autoclass('android.os.Build')
+            
+            # Android 11+ 检查是否有文件管理权限
+            has_manager_permission = False
+            if Build.VERSION.SDK_INT >= 30:
+                try:
+                    has_manager_permission = Environment.isExternalStorageManager()
+                except Exception as e:
+                    print(f"检查MANAGE_EXTERNAL_STORAGE权限失败: {e}")
+                    has_manager_permission = False
+            
+            # 检查外部存储是否可用
             if Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED:
                 external_storage = Environment.getExternalStorageDirectory().getAbsolutePath()
                 download_dir = os.path.join(external_storage, 'Download', 'novels')
-                test_file = os.path.join(download_dir, '.test')
+                
+                # 尝试创建目录并测试写入权限
                 try:
                     os.makedirs(download_dir, exist_ok=True)
-                    with open(test_file, 'w') as f:
-                        f.write('test')
+                    test_file = os.path.join(download_dir, '.permission_test')
+                    with open(test_file, 'w', encoding='utf-8') as f:
+                        f.write('permission_test')
                     os.remove(test_file)
+                    print(f"✅ 外部存储写入成功: {download_dir}")
                     return download_dir
-                except:
-                    pass
-            return os.path.join(App.get_running_app().user_data_dir, 'novels')
+                except OSError as e:
+                    print(f"⚠️ 外部存储写入失败 (errno={e.errno}): {e}")
+                    if Build.VERSION.SDK_INT >= 30 and not has_manager_permission:
+                        print("💡 提示: Android 11+需要'所有文件访问'权限")
+            
+            # 回退到应用私有目录
+            private_dir = os.path.join(App.get_running_app().user_data_dir, 'novels')
+            os.makedirs(private_dir, exist_ok=True)
+            print(f"✅ 使用私有目录: {private_dir}")
+            return private_dir
+            
         else:
+            # 桌面端
             downloads = os.path.join(os.path.expanduser('~'), 'Downloads')
             return os.path.join(downloads, 'novels')
+            
     except Exception as e:
+        print(f"⚠️ 获取下载目录异常: {e}")
         try:
-            return os.path.join(App.get_running_app().user_data_dir, 'novels')
+            private_dir = os.path.join(App.get_running_app().user_data_dir, 'novels')
+            os.makedirs(private_dir, exist_ok=True)
+            return private_dir
         except:
             return os.path.join(os.getcwd(), 'novels')
+
+
+def request_manage_storage_permission():
+    """请求MANAGE_EXTERNAL_STORAGE权限（Android 11+）"""
+    if platform != 'android':
+        return
+    
+    try:
+        from jnius import autoclass
+        Build = autoclass('android.os.Build')
+        
+        # 只在Android 11+执行
+        if Build.VERSION.SDK_INT < 30:
+            print("ℹ️ Android 11以下，跳过MANAGE_EXTERNAL_STORAGE检查")
+            return
+        
+        Environment = autoclass('android.os.Environment')
+        
+        # 检查是否已有权限
+        if Environment.isExternalStorageManager():
+            print("✅ 已有MANAGE_EXTERNAL_STORAGE权限")
+            return
+        
+        # 没有权限，引导用户到系统设置页面
+        print("⚠️ 需要用户手动授予'所有文件访问'权限")
+        Intent = autoclass('android.content.Intent')
+        Settings = autoclass('android.provider.Settings')
+        Uri = autoclass('android.net.Uri')
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        
+        intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+        uri = Uri.fromParts("package", PythonActivity.mActivity.getPackageName(), None)
+        intent.setData(uri)
+        PythonActivity.mActivity.startActivity(intent)
+        
+        print("📱 已打开系统设置页面，请手动开启'所有文件访问'权限")
+        
+    except Exception as e:
+        print(f"⚠️ 请求MANAGE_EXTERNAL_STORAGE权限失败: {e}")
 
 
 # ============== KivyMD 现代化前端 ==============
@@ -124,6 +191,7 @@ class NovelDownloader(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.md_bg_color = BG_PRIMARY
+        self._is_downloading = False
 
         # 主内容容器
         main = MDBoxLayout(
@@ -168,7 +236,7 @@ class NovelDownloader(MDScreen):
         title_label.bind(size=lambda i, v: setattr(i, 'text_size', (i.width, None)))
 
         subtitle_label = MDLabel(
-            text='v1.3.2 | 桀桀桀桀桀',
+            text='v1.3.3 | 桀桀桀桀桀',
             font_style='Caption',
             theme_text_color='Custom',
             text_color=TEXT_GRAY,
@@ -280,7 +348,7 @@ class NovelDownloader(MDScreen):
 
         # 输出文本标签
         self.output_label = MDLabel(
-            text = '[color=666688]book id获取方法：\n1.点击小说界面右上角分享，选择复制链接\n2.在浏览器打开该链接，然后复制加载后的地址\n3.地址前几行book id=后的数字即为该书id[/color]',
+            text='[color=666688]book id获取方法：\n1.点击小说界面右上角分享，选择复制链接\n2.在浏览器打开该链接，然后复制加载后的地址\n3.地址前几行book id=后的数字即为该书id[/color]',
             font_style='Body2',
             theme_text_color='Custom',
             text_color=TEXT_WHITE,
@@ -314,13 +382,17 @@ class NovelDownloader(MDScreen):
         main.add_widget(output_card)
         self.add_widget(main)
 
-    # ============== 交互逻辑（完全未修改） ==============
+    # ============== 交互逻辑 ==============
 
     def start_download(self, instance):
+        if self._is_downloading:
+            return
+        
         book_id = self.book_id_input.text.strip()
         if not book_id:
             self._append_output("[color=e94545]请输入有效的book id[/color]\n")
             return
+        self._is_downloading = True
         self.download_btn.disabled = True
         self.download_btn.text = '下载中...'
         self.status_label.text = '下载中'
@@ -377,16 +449,54 @@ class NovelDownloader(MDScreen):
 
             self._append_output(f"[color=666688]保存路径: {output_dir}[/color]\n")
 
-            with open(output_file, 'w', encoding='utf-8') as f:
+            # 预先删除可能存在的旧文件（避免某些文件系统的怪异行为）
+            try:
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+                    print(f"已删除旧文件: {output_file}")
+            except Exception as e:
+                print(f"删除旧文件失败: {e}")
+
+            # 尝试打开文件写入
+            file_handle = None
+            try:
+                file_handle = open(output_file, 'w', encoding='utf-8')
+            except PermissionError as pe:
+                self._append_output(
+                    f"[color=e94545]权限不足，无法写入外部存储[/color]\n"
+                    f"[color=e94545]错误: {pe}[/color]\n"
+                    f"[color=4da6e8]正在尝试使用应用私有目录...[/color]\n"
+                )
+                # 回退到应用私有目录
+                output_dir = os.path.join(App.get_running_app().user_data_dir, 'novels')
+                os.makedirs(output_dir, exist_ok=True)
+                output_file = os.path.join(output_dir, f"{safe_title}.txt")
+                self._append_output(f"[color=666688]新保存路径: {output_dir}[/color]\n")
+                file_handle = open(output_file, 'w', encoding='utf-8')
+            except OSError as ose:
+                self._append_output(
+                    f"[color=e94545]文件系统错误: {ose}[/color]\n"
+                    f"[color=4da6e8]正在尝试使用应用私有目录...[/color]\n"
+                )
+                # 回退到应用私有目录
+                output_dir = os.path.join(App.get_running_app().user_data_dir, 'novels')
+                os.makedirs(output_dir, exist_ok=True)
+                output_file = os.path.join(output_dir, f"{safe_title}.txt")
+                self._append_output(f"[color=666688]新保存路径: {output_dir}[/color]\n")
+                file_handle = open(output_file, 'w', encoding='utf-8')
+
+            with file_handle as f:
                 f.write(f"{title}\n作者: {author}\n简介:\n{intro}\n\n")
 
                 BATCH = 30
+                failed_batches = []
                 for start in range(1, total + 1, BATCH):
                     end = min(start + BATCH - 1, total)
                     try:
                         batch = get_chapter_contents_batch(book_id, start, end)
                     except Exception as e:
                         self._append_output(f"[color=e94545]批量 {start}-{end} 失败: {e}[/color]\n")
+                        failed_batches.append((start, end))
                         continue
 
                     chap_dict = {int(item['chapter']): item for item in batch if item.get('chapter')}
@@ -414,14 +524,26 @@ class NovelDownloader(MDScreen):
                         else:
                             f.write(f"{chap_title}\n[内容缺失]\n\n")
 
-                self._append_output(
-                    f"\n[color=33e87a]下载完成！[/color]\n"
-                    f"[color=666688]文件: {output_file}[/color]\n"
-                )
+                # 下载完成提示
+                if failed_batches:
+                    self._append_output(
+                        f"\n[color=e9a545]下载完成（部分失败）[/color]\n"
+                        f"[color=e94545]失败批次: {failed_batches}[/color]\n"
+                        f"[color=666688]文件: {output_file}[/color]\n"
+                    )
+                else:
+                    self._append_output(
+                        f"\n[color=33e87a]下载完成！[/color]\n"
+                        f"[color=666688]文件: {output_file}[/color]\n"
+                    )
+
         except Exception as e:
             self._append_output(f"[color=e94545]下载失败: {str(e)}[/color]\n")
+            import traceback
+            print(f"下载异常详情:\n{traceback.format_exc()}")
         finally:
             def enable_btn(dt):
+                self._is_downloading = False
                 self.download_btn.disabled = False
                 self.download_btn.text = '开始下载'
                 self.status_label.text = '就绪'
@@ -440,7 +562,7 @@ class TomatoNovelApp(MDApp):
         self.theme_cls.primary_palette = "Blue"
         self.theme_cls.accent_palette = "Teal"
 
-        # ✅ 注册支持中文的字体覆盖默认 Roboto
+        # 注册支持中文的字体覆盖默认 Roboto
         try:
             LabelBase.register(
                 name='Roboto',
@@ -453,16 +575,13 @@ class TomatoNovelApp(MDApp):
         except Exception as e:
             print(f"⚠️ 字体注册失败: {e}")
 
-        # ✅ 修复：将所有 KivyMD 主题字体样式统一指向 'Roboto'
-        # 原因：H6/Subtitle2 等样式默认使用 RobotoMedium（即 Roboto-Medium.ttf），
-        #       该字体名未被注册为中文字体，导致中文显示为方块。
-        #       将所有样式统一为 'Roboto' 即可使用我们注册的中文字体。
+        # 将所有 KivyMD 主题字体样式统一指向 'Roboto'
         try:
             new_styles = {}
             for style_name, style_value in self.theme_cls.font_styles.items():
                 if isinstance(style_value, (list, tuple)):
                     new_style = list(style_value)
-                    new_style[0] = 'Roboto'  # 统一使用已注册的中文字体名
+                    new_style[0] = 'Roboto'
                     new_styles[style_name] = new_style
                 else:
                     new_styles[style_name] = style_value
@@ -489,8 +608,13 @@ class TomatoNovelApp(MDApp):
                 except:
                     pass
                 request_permissions(permissions_needed)
+                print("✅ 基础存储权限已请求")
             except Exception as e:
-                print(f"权限请求失败: {e}")
+                print(f"⚠️ 基础权限请求失败: {e}")
+            
+            # Android 11+ 请求 MANAGE_EXTERNAL_STORAGE 权限
+            # 这个权限需要通过系统设置页面手动授予
+            Clock.schedule_once(lambda dt: request_manage_storage_permission(), 2)
 
         return NovelDownloader()
 

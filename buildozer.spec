@@ -4,7 +4,7 @@ package.name = fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 1.3.2
+version = 1.3.3
 requirements = python3,kivy,kivymd,pillow,requests,libiconv,libffi,pyjnius,android
 icon.filename = icon.png
 presplash.filename = presplash.png
@@ -27,7 +27,7 @@ p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
 
-# Android permissions - Updated for Android 15 compatibility
+# Android permissions - 包含MANAGE_EXTERNAL_STORAGE以兼容Android 11+
 android.permissions = INTERNET,WAKE_LOCK,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,MANAGE_EXTERNAL_STORAGE
 
 # Android 11+ scoped storage compatibility
