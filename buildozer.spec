@@ -4,8 +4,8 @@ package.name = fq
 package.domain = com.yyn123.fq
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 1.2.7
-requirements = python3,kivy,requests,libiconv,libffi,pyjnius,android
+version = 1.3.4
+requirements = python3,kivy,kivymd,pillow,requests,libiconv,libffi,pyjnius,android
 icon.filename = icon.png
 presplash.filename = presplash.png
 fullscreen = 0
@@ -16,7 +16,6 @@ entrypoint = main.py
 android.accept_sdk_license = True
 android.allow_api_min = 21
 android.api = 35
-android.minapi = 21
 android.ndk = 25b
 exclude_patterns = **/test/*, **/tests/*
 android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
@@ -27,7 +26,7 @@ p4a.gradle_dependencies = gradle:7.6.4
 p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
 
-# Android permissions - Updated for Android 15 compatibility
+# Android permissions
 android.permissions = INTERNET,WAKE_LOCK,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,MANAGE_EXTERNAL_STORAGE
 
 # Android 11+ scoped storage compatibility
@@ -44,7 +43,7 @@ android.aab = False
 
 # Android manifest additions
 android.manifest_placeholders = [:]
-android.manifest = <manifest><uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/></manifest>
+android.manifest = <manifest><uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/><application><activity android:name="org.kivy.android.PythonActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>
 
 [buildozer]
 log_level = 2
