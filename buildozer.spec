@@ -16,6 +16,7 @@ entrypoint = main.py
 android.accept_sdk_license = True
 android.allow_api_min = 21
 android.api = 35
+android.minapi = 21
 android.ndk = 25b
 exclude_patterns = **/test/*, **/tests/*
 android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
@@ -27,13 +28,18 @@ p4a.bootstrap = sdl2
 p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
 
 # Android permissions
-android.permissions = INTERNET,WAKE_LOCK,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,MANAGE_EXTERNAL_STORAGE
+# SAF 不需要 MANAGE_EXTERNAL_STORAGE，保留基础存储权限仅用于兼容旧设备
+android.permissions = INTERNET,WAKE_LOCK
 
-# Android 11+ scoped storage compatibility
-android.add_src = android/src/main/java/com/yyn123/fq/FileProvider.java
+# AndroidX DocumentFile 支持库（可选，但推荐）
+# 如果构建失败可尝试注释掉下面这行
+android.maven_repositories = https://dl.google.com/dl/android/maven2/
 
 # Following is required for release mode
 android.aab = False
+
+# 移除以下行（不再需要）
+# android.add_src = android/src/main/java/com/yyn123/fq/FileProvider.java
 
 # Signature configuration (uncomment and configure for release builds)
 #android.keystore = /home/runner/work/yyn123/AndAgain/com.yyn123.fq.keystore
@@ -41,9 +47,8 @@ android.aab = False
 #android.keystore_keypass = android
 #android.keystore_alias = com.yyn123.fq
 
-# Android manifest additions
-android.manifest_placeholders = [:]
-android.manifest = <manifest><uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/><application><activity android:name="org.kivy.android.PythonActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>
+# Android manifest 不再需要额外权限声明
+# android.manifest = <manifest><uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/></manifest>
 
 [buildozer]
 log_level = 2
